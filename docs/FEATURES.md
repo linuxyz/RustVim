@@ -517,13 +517,15 @@ headless frames; fold/sign/property APIs survive edits and undo; diff output
 matches the internal diff oracle.
 
 Implemented so far: DSP-01, DSP-02, DSP-03 (folding), DSP-04 (signs),
-DSP-05 (text properties, including inline virtual text) and the two-way core of
-DSP-11/12 (internal Myers diff, fillers, highlighting, diff folding,
-:diffthis/:diffoff/:diffupdate/:diffsplit, do/dp and :diffget/:diffput,
-[c/]c, diff_filler()/diff_hlID()); see [STATUS.md](STATUS.md) for the
-implemented surface and the documented approximations. DSP-06 (virtual lines),
-DSP-07 (popups), three-way merge/:diffpatch and external diffexpr remain P2
-work.
+DSP-05 (text properties), DSP-06 virtual text/lines (Vim text
+properties with "text_align" inline/after/above/below/right, padding, wrapping
+and truncation; the Neovim-style virt_lines API is out of scope) and the
+two-way core of DSP-11/12 (internal Myers diff, fillers, highlighting, diff
+folding, :diffthis/:diffoff/:diffupdate/:diffsplit, do/dp and
+:diffget/:diffput, [c/]c, diff_filler()/diff_hlID()); see
+[STATUS.md](STATUS.md) for the implemented surface and the documented
+approximations. DSP-07 (popups), three-way merge/:diffpatch and external
+diffexpr remain P2 work.
 
 | ID | Feature | Ph | Cx | Deps | Scope |
 |---|---|---|---|---|---|

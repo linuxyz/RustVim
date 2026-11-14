@@ -56,7 +56,7 @@ used by the golden-frame tests. VIMRUNTIME may point at an unpacked Vim
 | INS-01 insert/append/open | done | insert, append, open line, replace-char |
 | EX-01 Ex parser | done | ranges, addresses, marks, search addresses, modifiers |
 | ENC-01 UTF-8 internal model | done | byte strings, Unicode width table |
-| TST-01 test harness | done | 543 workspace tests at last run |
+| TST-01 test harness | done | 546 workspace tests at last run |
 
 P0 is complete.  Options gated behind unimplemented features (GUI, terminal,
 spell, diff, sessions, Python/Ruby/etc.) are absent from `:set`, completion
@@ -212,8 +212,10 @@ Implemented and exercised by tests:
   `prop_add()`/`prop_add_list()` (length, end_lnum/end_col, id, bufnr),
   removal and queries with `prop_remove()`/`prop_clear()`/
   `prop_list()`/`prop_find()`, highlight properties with
-  priority/combine/override-start_incl-end_incl settings, and inline
-  `text` virtual text (including `text_align` "after" at the end of a line).
+  priority/combine/override-start_incl-end_incl settings, and virtual
+  text (the `text` field): inline and "after" text, "above"/"below" text rows
+  with `text_padding_left` and `text_wrap` wrap/truncate, and "right" aligned
+  text at the window edge.
   Properties are anchored to stable line ids so they follow line
   insertions/deletions and undo. `has('textprop')` is 1.
 - **Diff (DSP-11/12 two-way core):** window-local `'diff'`, `:diffthis`,
@@ -242,9 +244,11 @@ Still approximated or missing in P2:
 - Text property columns are located by byte offset and clamped, but are not
   shifted when text is inserted/deleted *inside* a line (Vim does shift them);
   `start_incl`/`end_incl` are stored but have no edit-time effect for the same
-  reason. Virtual text with `text_align` "above"/"below"/"right" is not
-  rendered, inline virtual text does not participate in wrapping geometry, and
-  `override` is accepted but does not override Visual/cursorline highlights.
+  reason. Inline virtual text does not participate in the wrap geometry of the
+  buffer line, "above"/"below"/"right" virtual rows are not displayed for lines
+  inside a closed fold, only the first right-aligned text of a line is drawn
+  (multiple "right" properties overlap), and `override` is accepted but does
+  not override Visual/cursorline highlights.
 - Diff is two-way only: with more than two diff windows the first other diff
   window is used, three-way merge (and `:diffpatch`) is not implemented, and
   the external `'diffexpr'` interface is ignored in favour of the internal
@@ -263,7 +267,7 @@ cargo test --workspace
 cargo clippy --workspace --all-targets -- -D warnings
 ~~~
 
-At the time of writing the workspace has 543 tests and no clippy warnings.
+At the time of writing the workspace has 546 tests and no clippy warnings.
 The optional PTY smoke script is tools/pty_smoke.py; some sandboxes deny
 openpty, so it is not part of the required CI gate yet.
 

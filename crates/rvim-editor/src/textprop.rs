@@ -10,7 +10,7 @@ use std::collections::HashMap;
 use rvim_text::LineId;
 use rvim_types::{BufferId, VimError, VimString};
 use rvim_ui_api::Attr;
-use rvim_view::VirtualText;
+use rvim_view::{VirtualPos, VirtualText};
 use rvim_viml::value::VimDict;
 use rvim_viml::Value;
 
@@ -188,7 +188,7 @@ impl Editor {
         spans
     }
 
-    /// Virtual text attached to \p lnum, ordered by column.
+    /// Virtual text attached to \p lnum, ordered by priority and column.
     pub(crate) fn prop_virtual_texts(&self, buffer: BufferId, lnum: u32) -> Vec<VirtualText> {
         let Some(entry) = self.buffers.get(buffer) else {
             return Vec::new();
@@ -199,14 +199,21 @@ impl Editor {
             if prop.text.is_empty() || prop.start_lnum != lnum {
                 continue;
             }
-            let col = if prop.start_col == 0 {
-                if !prop.text_align.is_empty() && prop.text_align != "after" {
-                    // "above"/"below"/"right" virtual text is not rendered yet.
-                    continue;
-                }
-                line_len
+            let align = prop.text_align.as_str();
+            let pos = if prop.start_col > 0 {
+                VirtualPos::Inline
             } else {
-                prop.start_col.min(line_len)
+                match align {
+                    "above" => VirtualPos::Above,
+                    "below" => VirtualPos::Below,
+                    "right" => VirtualPos::Right,
+                    _ => VirtualPos::After,
+                }
+            };
+            let col = match pos {
+                VirtualPos::Inline => prop.start_col.min(line_len),
+                VirtualPos::After => line_len,
+                _ => 0,
             };
             let attr = self
                 .prop_type_for(buffer, &prop.type_name)
@@ -218,13 +225,20 @@ impl Editor {
                     }
                 })
                 .unwrap_or_default();
+            let priority = self
+                .prop_type_for(buffer, &prop.type_name)
+                .map_or(0, |def| def.priority);
             texts.push(VirtualText {
                 col,
                 text: prop.text.clone(),
                 attr,
+                pos,
+                padding_left: prop.text_padding_left.max(0) as u16,
+                wrap: prop.text_wrap == "wrap",
+                priority,
             });
         }
-        texts.sort_by_key(|text| text.col);
+        texts.sort_by_key(|text| (text.priority, text.col));
         texts
     }
 
@@ -471,6 +485,41 @@ impl Editor {
         }
         if text.is_some() && col < 0 {
             return Err(VimError::new(964, format!("Invalid column number: {col}")));
+        }
+        if let Some(align) = props.get_str("text_align").and_then(value_string) {
+            let align = align.trim().to_string();
+            if !align.is_empty() && col != 0 {
+                return Err(VimError::new(
+                    1294,
+                    "Can only use text_align when column is zero",
+                ));
+            }
+            if !matches!(align.as_str(), "" | "after" | "right" | "above" | "below") {
+                return Err(VimError::new(
+                    474,
+                    format!("Invalid argument: text_align={align}"),
+                ));
+            }
+        }
+        if let Some(wrap) = props.get_str("text_wrap").and_then(value_string) {
+            let wrap = wrap.trim().to_string();
+            if !matches!(wrap.as_str(), "" | "wrap" | "truncate") {
+                return Err(VimError::new(
+                    474,
+                    format!("Invalid argument: text_wrap={wrap}"),
+                ));
+            }
+        }
+        if let Some(padding) = props.get_str("text_padding_left").and_then(value_number) {
+            if padding < 0 {
+                return Err(VimError::new(474, "Invalid argument: text_padding_left"));
+            }
+            if col > 0 {
+                return Err(VimError::new(
+                    1296,
+                    "Can only use left padding when column is zero",
+                ));
+            }
         }
         let start_col = (col - 1).max(0) as u32;
         let start_col = if text.is_some() && col == 0 {

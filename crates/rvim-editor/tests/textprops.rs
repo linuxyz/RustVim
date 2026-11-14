@@ -253,3 +253,98 @@ fn props_on_other_buffers() {
     let _ = std::fs::remove_file(path);
     let _ = std::fs::remove_file(path2);
 }
+
+#[test]
+fn virtual_text_above_below_right_and_padding() {
+    let (mut ed, path) = editor_with("abc\nline2\n");
+    eval(&mut ed, "prop_type_add('tp', {'highlight': 'Comment'})");
+    eval(
+        &mut ed,
+        "prop_add(1, 0, {'type': 'tp', 'text': '[above]', 'text_align': 'above', 'text_padding_left': 2})",
+    );
+    eval(
+        &mut ed,
+        "prop_add(1, 0, {'type': 'tp', 'text': '[below]', 'text_align': 'below'})",
+    );
+    let lines = rows(&mut ed, 4);
+    assert_eq!(lines[0], "  [above]");
+    assert_eq!(lines[1], "abc");
+    assert_eq!(lines[2], "[below]");
+    assert_eq!(lines[3], "line2");
+    // Right-aligned virtual text sits at the right edge of the window.
+    eval(
+        &mut ed,
+        "prop_add(2, 0, {'type': 'tp', 'text': 'R', 'text_align': 'right'})",
+    );
+    let lines = rows(&mut ed, 4);
+    assert!(lines[3].ends_with('R'), "{lines:?}");
+    // The cursor line is shifted down by above rows.
+    ed.execute_ex("2");
+    let frame = ed.render();
+    assert_eq!(frame.cursor.map(|cursor| cursor.row), Some(3));
+    let _ = std::fs::remove_file(path);
+}
+
+#[test]
+fn virtual_text_wrap_and_truncate() {
+    let path = temp_path("wrap.txt");
+    std::fs::write(&path, b"x\n").unwrap();
+    let mut ed = Editor::new(Size::new(12, 20));
+    ed.open_file(&path).unwrap();
+    ed.messages.clear();
+    eval(&mut ed, "prop_type_add('tp', {'highlight': 'Comment'})");
+    eval(
+        &mut ed,
+        "prop_add(1, 0, {'type': 'tp', 'text': 'abcdefghijklmnopqrstuvwxyz', 'text_align': 'above'})",
+    );
+    // Truncate (default) keeps a single row clipped to the window width.
+    let lines = rows(&mut ed, 2);
+    assert_eq!(lines[0], "abcdefghijklmnopqrst");
+    assert_eq!(lines[1], "x");
+    eval(&mut ed, "prop_remove({'type': 'tp', 'all': 1})");
+    eval(
+        &mut ed,
+        "prop_add(1, 0, {'type': 'tp', 'text': 'abcdefghijklmnopqrstuvwxyz', 'text_align': 'above', 'text_wrap': 'wrap'})",
+    );
+    let lines = rows(&mut ed, 4);
+    assert_eq!(lines[0], "abcdefghijklmnopqrst");
+    assert_eq!(lines[1], "uvwxyz");
+    assert_eq!(lines[2], "x");
+    let _ = std::fs::remove_file(path);
+}
+
+#[test]
+fn virtual_text_stacking_and_validation() {
+    let (mut ed, path) = editor_with("abc\n");
+    eval(
+        &mut ed,
+        "prop_type_add('low', {'highlight': 'Comment', 'priority': 1})",
+    );
+    eval(
+        &mut ed,
+        "prop_type_add('high', {'highlight': 'Keyword', 'priority': 5})",
+    );
+    eval(
+        &mut ed,
+        "prop_add(1, 0, {'type': 'low', 'text': 'low', 'text_align': 'above'})",
+    );
+    eval(
+        &mut ed,
+        "prop_add(1, 0, {'type': 'high', 'text': 'high', 'text_align': 'above'})",
+    );
+    let lines = rows(&mut ed, 3);
+    assert_eq!(lines[0], "low");
+    assert_eq!(lines[1], "high");
+    assert_eq!(lines[2], "abc");
+    // text_align is only valid with column zero (E1294).
+    ed.eval_viml("prop_add(1, 2, {'type': 'low', 'text': 'x', 'text_align': 'above'})")
+        .unwrap_err();
+    // Padding is only valid when the column is zero (E1296).
+    ed.eval_viml("prop_add(1, 2, {'type': 'low', 'text_padding_left': 2})")
+        .unwrap_err();
+    ed.eval_viml("prop_add(1, 0, {'type': 'low', 'text': 'x', 'text_align': 'diagonal'})")
+        .unwrap_err();
+    ed.eval_viml("prop_add(1, 0, {'type': 'low', 'text': 'x', 'text_wrap': 'fold'})")
+        .unwrap_err();
+    let _ = std::fs::remove_file(path);
+}

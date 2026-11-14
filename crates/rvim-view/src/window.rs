@@ -191,11 +191,14 @@ impl Window {
                     continue;
                 }
                 row += usize::from(self.diff.filler_above(lnum));
+                let (above_rows, below_rows) = crate::view::virtual_rows_for_line(self, host, lnum);
+                row += (above_rows + below_rows) as usize;
                 let line = host.buffer_line(self.buffer, lnum).unwrap_or(b"");
                 let display = rvim_types::unicode::display_width(line, 0, self.options.tabstop);
                 row += display.div_ceil(width).max(1);
             }
             if !cursor_hidden {
+                row += crate::view::virtual_rows_for_line(self, host, cursor_lnum).0 as usize;
                 row += (screen as usize) / width;
             }
             if row >= text_height as usize {

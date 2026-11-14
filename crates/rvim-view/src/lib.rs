@@ -19,7 +19,7 @@ pub use fold::{fillchars_char, fillchars_opt, FoldState};
 pub use layout::{all_windows, compute_layout, LayoutNode, LayoutRect, SplitDir};
 pub use signs::{SignCell, SignState};
 pub use statusline::{expand_statusline, format_default_statusline, StatuslineOptions};
-pub use textprop::VirtualText;
+pub use textprop::{virtual_text_rows, VirtualPos, VirtualText};
 pub use view::{display_chunks, display_prefix_width};
 pub use view::{Chrome, RenderHost, ViewState};
 pub use window::{Viewport, VisualSelection, Window, WindowOptions};

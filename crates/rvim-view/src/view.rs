@@ -773,6 +773,50 @@ impl ViewState {
                 first_visible = false;
                 continue;
             }
+            let virtuals = host.line_virtual_text(window.buffer, lnum);
+            let displayed_line = !window.folds.is_hidden(lnum) || window.folds.owner(lnum) == lnum;
+            // Virtual text rows placed above the line.
+            if displayed_line {
+                for virtual_text in virtuals
+                    .iter()
+                    .filter(|text| text.pos == crate::textprop::VirtualPos::Above)
+                {
+                    let padding = virtual_text.padding_left.min(text_width);
+                    let available = text_width.saturating_sub(padding).max(1);
+                    let rows = crate::textprop::virtual_text_rows(
+                        &virtual_text.text,
+                        available,
+                        virtual_text.wrap,
+                    );
+                    for row_text in rows {
+                        if screen_row >= bottom {
+                            break;
+                        }
+                        frame.base_mut().fill(
+                            Rect::new(screen_row, rect.text.col, 1, rect.text.cols),
+                            ' ',
+                            host.highlight("Normal"),
+                        );
+                        if padding > 0 {
+                            let spaces = " ".repeat(usize::from(padding));
+                            frame.base_mut().put_str(
+                                screen_row,
+                                rect.text.col + gutter_width,
+                                &spaces,
+                                host.highlight("Normal"),
+                            );
+                        }
+                        frame.base_mut().put_str(
+                            screen_row,
+                            rect.text.col + gutter_width + padding,
+                            &row_text,
+                            virtual_text.attr,
+                        );
+                        screen_row += 1;
+                        first_visible = false;
+                    }
+                }
+            }
             // Diff filler rows are displayed above their line.
             if !window.folds.is_hidden(lnum) || window.folds.owner(lnum) == lnum {
                 let mut fillers_left = window.diff.filler_above(lnum);
@@ -878,7 +922,6 @@ impl ViewState {
             let searches = host.search_matches(window.buffer, lnum);
             let search_attr = host.highlight("Search");
             let styles = host.line_styles(window.buffer, lnum);
-            let virtuals = host.line_virtual_text(window.buffer, lnum);
             let sign_cell = window.signs.get(lnum);
             let sign_line_hl = sign_cell
                 .map(|cell| cell.line_hl.clone())
@@ -1062,8 +1105,85 @@ impl ViewState {
                     *first_byte,
                     *last_byte,
                 );
+                if chunk_index == 0 {
+                    for virtual_text in virtuals
+                        .iter()
+                        .filter(|text| text.pos == crate::textprop::VirtualPos::Right)
+                    {
+                        let padding = virtual_text.padding_left.min(text_width);
+                        let available = text_width.saturating_sub(padding).max(1);
+                        let text = crate::textprop::virtual_text_rows(
+                            &virtual_text.text,
+                            available,
+                            virtual_text.wrap,
+                        )
+                        .into_iter()
+                        .next()
+                        .unwrap_or_default();
+                        let cells = rvim_types::unicode::display_width(
+                            text.as_bytes(),
+                            0,
+                            window.options.tabstop,
+                        ) as u16;
+                        let start = rect.text.col + gutter_width + text_width.saturating_sub(cells);
+                        if padding > 0 {
+                            let spaces = " ".repeat(usize::from(padding));
+                            frame.base_mut().put_str(
+                                screen_row,
+                                start.saturating_sub(padding),
+                                &spaces,
+                                host.highlight("Normal"),
+                            );
+                        }
+                        frame
+                            .base_mut()
+                            .put_str(screen_row, start, &text, virtual_text.attr);
+                    }
+                }
                 screen_row += 1;
                 first_visible = false;
+            }
+            // Virtual text rows placed below the line.
+            if displayed_line {
+                for virtual_text in virtuals
+                    .iter()
+                    .filter(|text| text.pos == crate::textprop::VirtualPos::Below)
+                {
+                    let padding = virtual_text.padding_left.min(text_width);
+                    let available = text_width.saturating_sub(padding).max(1);
+                    let rows = crate::textprop::virtual_text_rows(
+                        &virtual_text.text,
+                        available,
+                        virtual_text.wrap,
+                    );
+                    for row_text in rows {
+                        if screen_row >= bottom {
+                            break;
+                        }
+                        frame.base_mut().fill(
+                            Rect::new(screen_row, rect.text.col, 1, rect.text.cols),
+                            ' ',
+                            host.highlight("Normal"),
+                        );
+                        if padding > 0 {
+                            let spaces = " ".repeat(usize::from(padding));
+                            frame.base_mut().put_str(
+                                screen_row,
+                                rect.text.col + gutter_width,
+                                &spaces,
+                                host.highlight("Normal"),
+                            );
+                        }
+                        frame.base_mut().put_str(
+                            screen_row,
+                            rect.text.col + gutter_width + padding,
+                            &row_text,
+                            virtual_text.attr,
+                        );
+                        screen_row += 1;
+                        first_visible = false;
+                    }
+                }
             }
             lnum += 1;
         }
@@ -1286,6 +1406,9 @@ impl ViewState {
             while virtual_index < virtuals.len() && (virtuals[virtual_index].col as usize) <= byte {
                 let virtual_text = &virtuals[virtual_index];
                 virtual_index += 1;
+                if !virtual_text.inline_after_text() {
+                    continue;
+                }
                 if (virtual_text.col as usize) < first_byte {
                     continue;
                 }
@@ -1404,6 +1527,9 @@ impl ViewState {
         {
             let virtual_text = &virtuals[virtual_index];
             virtual_index += 1;
+            if !virtual_text.inline_after_text() {
+                continue;
+            }
             let attr = merge_attr(virtual_text.attr, line_background);
             for ch in virtual_text.text.chars() {
                 if out_col >= max_col {
@@ -1442,6 +1568,7 @@ impl ViewState {
             }
             return Some((rect.text.row + row as u16, rect.text.col + gutter_width));
         }
+        row += virtual_rows_for_line(window, host, cursor_lnum).0;
         if window.options.wrap && window.text_width() > 0 {
             let width = window.text_width() as u32;
             let line = host
@@ -2092,6 +2219,8 @@ fn rows_before(window: &Window, host: &dyn RenderHost, topline: u32, target: u32
             continue;
         }
         row += u32::from(window.diff.filler_above(lnum));
+        let (above_rows, below_rows) = virtual_rows_for_line(window, host, lnum);
+        row += above_rows + below_rows;
         if window.options.wrap && width > 0 {
             let line = host.buffer_line(window.buffer, lnum).unwrap_or(b"");
             let prefix = continuation_prefix(window, line);
@@ -2117,6 +2246,36 @@ fn rows_before(window: &Window, host: &dyn RenderHost, topline: u32, target: u32
         lnum += 1;
     }
     row
+}
+
+/// Number of virtual text rows displayed above and below \p lnum.
+pub(crate) fn virtual_rows_for_line(
+    window: &Window,
+    host: &dyn RenderHost,
+    lnum: u32,
+) -> (u32, u32) {
+    let texts = host.line_virtual_text(window.buffer, lnum);
+    let width = window.text_width();
+    let mut above = 0;
+    let mut below = 0;
+    for text in texts {
+        if !matches!(
+            text.pos,
+            crate::textprop::VirtualPos::Above | crate::textprop::VirtualPos::Below
+        ) {
+            continue;
+        }
+        let padding = text.padding_left.min(width);
+        let available = width.saturating_sub(padding).max(1);
+        let rows =
+            crate::textprop::virtual_text_rows(&text.text, available, text.wrap).len() as u32;
+        if text.pos == crate::textprop::VirtualPos::Above {
+            above += rows;
+        } else {
+            below += rows;
+        }
+    }
+    (above, below)
 }
 
 /// Width in cells of virtual text placed before byte column \p col.
