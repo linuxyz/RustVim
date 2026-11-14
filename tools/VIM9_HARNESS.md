@@ -25,10 +25,10 @@ Without the example parse reports that and marks all cases unrun, never passed; 
         -c 'redir => g:vim9_corpus_output' -c 'source <absolute path>' -c 'redir END' \
         -c 'call writefile(split(g:vim9_corpus_output, "\n"), "<temp out>")' -c 'qa!'
 
-For each oracle-checked positive, with stdin /dev/null.  :redir captures :echo/:echomsg and error text exactly; the file is stored byte-for-byte in expected/.  Vim must exit 0, write the file, and emit no 'E<code>:' or 'Error detected' line.
+For each oracle-checked positive, with stdin /dev/null.  :redir captures :echo/:echomsg and error text exactly; the file is stored byte-for-byte in expected/.  Vim must exit 0, write the file, and emit no 'E-code:' or 'Error detected' line.
 
 ## Adding a case
-Add positive/<name>.vim, run 'oracle', then check-corpus and oracle --check.  If local Vim rejects valid 9.2 syntax, mark '# vim9-corpus-no-oracle: reason' rather than weakening the case.  Negatives need a new name plus '# expect-error: E<code>' or '# expect: fail'.
+Add positive/<name>.vim, run 'oracle', then check-corpus and oracle --check.  If local Vim rejects valid 9.2 syntax, mark '# vim9-corpus-no-oracle: reason' rather than weakening the case.  Negatives need a new name plus '# expect-error: E-code' or '# expect: fail'.
 
 ## Known limitations
 The oracle is Vim 9.1 (patches 1-1752), older than the 9.2.1338 target; it already accepts nested :def, generics, classes, interfaces, enums and type aliases (only v:stacktrace in p27 is no-oracle).
