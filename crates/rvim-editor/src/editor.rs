@@ -4269,6 +4269,14 @@ impl Editor {
                 let count = self.pending_count.take().unwrap_or(1).max(1) as i64;
                 self.fold_more(count);
             }
+            'v' => self.fold_open(cursor_line, false),
+            'x' => self.fold_open(cursor_line, true),
+            'X' => {
+                let level = self
+                    .options
+                    .window_number(self.current_window_id(), "foldlevel");
+                self.set_foldlevel(level);
+            }
             'j' => self.fold_jump(true),
             'k' => self.fold_jump(false),
             'd' => {

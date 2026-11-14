@@ -166,6 +166,12 @@ zero2
     ed.execute_ex("normal! zr");
     assert_eq!(eval(&mut ed, "&foldlevel"), "1");
     assert_eq!(eval(&mut ed, "foldclosed(2)"), "-1");
+    // zv opens the folds at the cursor.
+    ed.execute_ex("normal! zM");
+    ed.execute_ex("normal! 2G");
+    assert_eq!(eval(&mut ed, "foldclosed(2)"), "2");
+    ed.execute_ex("normal! zv");
+    assert_eq!(eval(&mut ed, "foldclosed(2)"), "-1");
     // foldenable=off makes every fold appear open; foldclosed reports -1.
     ed.execute_ex("normal! zM");
     assert_eq!(eval(&mut ed, "foldclosed(2)"), "2");
