@@ -34,6 +34,15 @@ fn compare_golden(name: &str, actual: &str) {
     assert_eq!(actual, expected, "golden mismatch: {}", path.display());
 }
 
+/// Give the buffer a fixed, platform-independent name.
+///
+/// Golden snapshots include the statusline, which renders the buffer name, and
+/// the backing file lives in the machine-specific temporary directory. Rename
+/// the buffer so snapshots do not depend on `TMPDIR` or the host path.
+fn stabilise_buffer_name(editor: &mut Editor, name: &str) {
+    editor.execute_ex(&format!("file {name}"));
+}
+
 fn render_case(rows: u16, cols: u16, setup: impl FnOnce(&mut Editor)) -> String {
     render_case_content(rows, cols, b"hello\nworld\n", setup)
 }
@@ -53,6 +62,7 @@ fn render_case_content(
     let mut editor = Editor::new(Size::new(rows, cols));
     editor.swap_enabled = false;
     editor.open_file(&path).unwrap();
+    stabilise_buffer_name(&mut editor, &format!("rvim-golden-{rows}x{cols}.txt"));
     editor.execute_ex("set laststatus=2");
     setup(&mut editor);
     let frame = editor.render();
@@ -88,6 +98,7 @@ fn golden_cursor_80x24() {
         let mut editor = Editor::new(Size::new(24, 80));
         editor.swap_enabled = false;
         editor.open_file(&path).unwrap();
+        stabilise_buffer_name(&mut editor, "rvim-golden-cursor.txt");
         editor.execute_ex("set laststatus=2");
         editor.execute_ex("normal! 2G0l");
         editor.render()
@@ -119,6 +130,7 @@ fn golden_attribute_palette_80x24() {
     let mut editor = Editor::new(Size::new(24, 80));
     editor.swap_enabled = false;
     editor.open_file(&path).unwrap();
+    stabilise_buffer_name(&mut editor, "rvim-golden-attrs.txt");
     editor.execute_ex("syntax match Todo /TODO/");
     editor.execute_ex("highlight Todo ctermfg=red cterm=bold");
     editor.execute_ex("set laststatus=2");

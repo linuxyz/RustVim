@@ -36,5 +36,5 @@
      ~                                                                                                                  
      ~                                                                                                                  
      ~                                                                                                                  
-/var/folders/7f/2q2zb4_14t30gf_dt3wg9sbh0000gn/T/rvim-golden-40x120-2728214711924645424.txt               1,1 0% NORMAL 
+rvim-golden-40x120.txt                                                                                    1,1 0% NORMAL 
 "rvim-golden-40x120-2728214711924645424.txt" 2L                                                                         

@@ -20,5 +20,5 @@ hello
 ~                                                                               
 ~                                                                               
 ~                                 hello popup                                   
-/var/folders/7f/2q2zb4_14t30gf_dt3wg9sbh0000gn/T/rvim-golden-24 1,1 100% NORMAL 
+rvim-golden-24x80.txt                                           1,1 100% NORMAL 
 hello popup                                                                     
