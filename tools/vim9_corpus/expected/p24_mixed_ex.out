@@ -1,0 +1,6 @@
+from-execute
+tabstop=4 shiftwidth=4
+line=hello
+line2=hello world
+exec-in-def
+in-function=second number=true

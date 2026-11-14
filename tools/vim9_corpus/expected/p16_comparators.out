@@ -1,0 +1,7 @@
+eq=true ne=false
+lt=true ge=true
+match=true nomatch=true
+case=false,true
+listeq=true listis=false
+same=true isnot=true
+bool=true

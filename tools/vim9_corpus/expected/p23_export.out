@@ -1,0 +1,5 @@
+version=7
+bump=1,2
+box=9
+numbers=[1, 2]
+mode=On

@@ -1,0 +1,4 @@
+empty=0z len=0
+raw=0zDEADBEEF len=4
+dotted=0z010203 len=3
+text=0z68656C6C.6F

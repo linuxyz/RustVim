@@ -1,0 +1,6 @@
+sorted=alpha,beta,gamma
+mapped=AB
+trim=X
+filtered=[2, 4]
+reduced=6
+chained=HELLO-WORLD

@@ -1,0 +1,4 @@
+untyped=1 typed=2 text=three
+fixed=fixed fixed_typed=fixed2
+C1=10 C2=20 flag=true
+nothing=null

@@ -1,0 +1,4 @@
+finally-ran
+caught-boom: boom
+inner-finally
+thrower=7

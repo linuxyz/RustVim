@@ -32,6 +32,7 @@ terminal emulator (descoped).
 | [docs/RUNTIME-COMPAT.md](docs/RUNTIME-COMPAT.md) | Vim runtime loading, filetype/ftplugin/indent/syntax/help, tiers, harness. |
 | [docs/ROADMAP.md](docs/ROADMAP.md) | Milestones M0-M6, gates, recommended first slice. |
 | [docs/EXCLUSIONS.md](docs/EXCLUSIONS.md) | Vi/Ex, Vim9, GUI, terminal emulator, optional features and their contracts. |
+| [docs/VIM9-PLAN.md](docs/VIM9-PLAN.md) | Vim9 script implementation plan, phase gates and progress (front end landed). |
 | [docs/STATUS.md](docs/STATUS.md) | Implemented P0/P1 surface, tests and known gaps. |
 | [docs/inventory/](docs/inventory/README.md) | Generated Vim command/option/function/key/event/feature inventories. |
 

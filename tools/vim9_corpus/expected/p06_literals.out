@@ -1,0 +1,4 @@
+list=[1, 2, 3] empty_list=[]
+dict={'a': 1, 'b': 2} quoted={'x': 1, 'y': 2}
+computed={'k': 5} numeric={'1': 'one'}
+tuple=(1, 'two') single=(9, )

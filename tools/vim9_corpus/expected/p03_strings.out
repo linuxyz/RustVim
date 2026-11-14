@@ -1,0 +1,7 @@
+single=single 'quoted' text
+escaped=double^Iwith^Iescape
+plain=backslash: \ end
+interp=hello world
+math=one plus two is 3
+single_interp=raw world
+upper=ABC joined=a-b

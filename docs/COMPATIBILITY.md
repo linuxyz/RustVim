@@ -63,9 +63,11 @@ The failures above are the current, honest gap list.  They cluster in:
    Tier B).** Vim 9.2 converted a number of runtime files to Vim9 script
    (`vim9script`, `def`, `import`), including 2html, context, csv, hare,
    haredoc, help, hitest, hlsl, mf, mp, odin, omnimark, tsv, java, antlr,
-   javacc, aidl, sqlj and xpm, plus `compiler/context.vim`.  Vim9 script is
-   deliberately out of scope for RVim (like the terminal emulator); these
-   files now report `E319` instead of being silently skipped.
+   javacc, aidl, sqlj and xpm, plus `compiler/context.vim`.  Vim9 script
+   evaluation is not available yet, so these files report `E319`; the Vim9
+   front end (lexer, AST, parser) is implemented and parses all 65 real Vim9
+   runtime files - see [VIM9-PLAN.md](VIM9-PLAN.md).  The remaining work is
+   the type checker/evaluator (Phase 2) and the `has('vim9script')` flip.
 2. **Known harness artefact (1 check).** `syntax/glimmer.vim` requires
    `b:current_syntax` to have been set by a previously loaded JavaScript or
    TypeScript syntax file.  Sourcing it standalone fails in Vim 9.1 as well

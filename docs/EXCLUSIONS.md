@@ -17,7 +17,7 @@ Scope is a product decision, not an accident. Every exclusion has:
 | Area | Status | Runtime answer | Re-entry |
 |---|---|---|---|
 | Vi/Ex compatibility mode | **Excluded** | <code>has('compatible')</code> false; <code>'compatible'</code> cannot be enabled | Not planned; Vim semantics only |
-| Vim9 script | **Deferred** | <code>has('vim9script')</code> false; Vim9 files skipped with warning | Dedicated VIM9 milestone |
+| Vim9 script | **Deferred (in progress)** | <code>has('vim9script')</code> false; Vim9 files skipped with warning | Front end landed (parser); evaluator/classes next - [VIM9-PLAN.md](VIM9-PLAN.md) |
 | GUI | **Interface only** | <code>has('gui')</code> and <code>has('gui_running')</code> false | A new <code>rvim-gui</code> backend |
 | Terminal emulator | **Descoped** | <code>has('terminal')</code> false; no <code>:terminal</code>/<code>term_*</code> | Dedicated TERM milestone if re-approved |
 | Printing | Deferred (P4 optional) | <code>has('printer')</code> false; <code>:hardcopy</code> errors | MISC-02 |
@@ -92,7 +92,14 @@ tests against the <code>ex</code> binary. It is not a small flag.
 
 ## 3. Vim9 script is deferred
 
-### What is deferred
+Status: the Vim9 front end (lexer, AST, parser) is implemented in
+<code>crates/rvim-viml/src/vim9/</code> and parses the corpus plus all 65 real
+Vim9 files of the pinned runtime.  Evaluation and the
+<code>has('vim9script')</code> flip are still pending, so the runtime contract
+below is unchanged.  The phase plan, gates and progress are tracked in
+[VIM9-PLAN.md](VIM9-PLAN.md).
+
+### What was deferred
 
 - <code>vim9script</code> syntax and semantics.
 - <code>:def</code>/<code>:enddef</code>, compiled functions,

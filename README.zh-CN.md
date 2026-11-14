@@ -27,6 +27,7 @@ VimL、syntax、runtime/help、窗口/tab、映射、autocmd、quickfix/tags/ses
 | [docs/RUNTIME-COMPAT.md](docs/RUNTIME-COMPAT.md) | 运行时加载顺序、filetype/ftplugin/indent/syntax/help、Tier A/B/C 和测试。 |
 | [docs/ROADMAP.md](docs/ROADMAP.md) | M0–M6 里程碑、验收门槛、推荐的第一条纵向切片。 |
 | [docs/EXCLUSIONS.md](docs/EXCLUSIONS.md) | Vi/Ex、Vim9、GUI、终端模拟器、可选功能的行为契约。 |
+| [docs/VIM9-PLAN.md](docs/VIM9-PLAN.md) | Vim9 脚本实现计划、阶段门与进度（前端已落地）。 |
 | [README.md](README.md) | 英文入口。 |
 
 机械清单（由 Vim runtime 自动生成）在 [docs/inventory/](docs/inventory/README.md)：

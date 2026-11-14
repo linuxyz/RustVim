@@ -1,0 +1,5 @@
+add=5
+greet=hello world named=hello vim
+sum=0 sum3=6
+ignore=ignored
+show=[1, 2]

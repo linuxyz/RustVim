@@ -15,6 +15,7 @@ pub mod pattern;
 pub mod runtime;
 pub mod script;
 pub mod value;
+pub mod vim9;
 
 pub use error::{Result, VimError};
 pub use eval::{call_function, call_value, eval_expression};

@@ -1,0 +1,4 @@
+executed-from-heredoc
+plain=raw line one|raw line two
+trimmed=alpha|beta
+evaluated=value is 3

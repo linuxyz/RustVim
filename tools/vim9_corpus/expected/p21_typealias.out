@@ -1,0 +1,6 @@
+pair=(1, 'one')
+numbers=[1, 2, 3] lookup={'a': 'x'}
+double=8
+optional=10,6
+summer=6
+handler=assigned
