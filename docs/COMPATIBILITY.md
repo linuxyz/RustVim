@@ -59,7 +59,8 @@ below.
 
 The failures above are the current, honest gap list.  They cluster in:
 
-1. **Vim9 script runtime files (18 checks).** Vim 9.2 converted a number of
+1. **Vim9 script runtime files (18 Tier C checks plus compiler/context.vim in
+   Tier B).** Vim 9.2 converted a number of
    runtime files to Vim9 script (`vim9script`, `def`, `import`), including
    several syntax files (2html, context, csv, hare, haredoc, hitest, hlsl, mf,
    mp, odin, omnimark, tsv, java, antlr, javacc, aidl, sqlj, xpm among the
