@@ -4,8 +4,8 @@
 the P2 folding (DSP-01/02/03), signs (DSP-04), text property (DSP-05)
 and two-way diff (DSP-11/12) subsystems.
 **Target:** Vim 9.2.1338.
-**State:** working editor and test suite; P0 is complete, P1 is substantially
-implemented but not yet at the catalog's definition of done. Per-feature status
+**State:** working editor and test suite; P0 and P1 are complete and the
+P2 subsystems listed above are implemented. Per-feature status
 lives in [BACKLOG-P0-P1.md](BACKLOG-P0-P1.md), generated from
 [catalog/status.json](../catalog/status.json).
 This file is deliberately conservative: a feature is only marked **done** when
@@ -56,13 +56,18 @@ used by the golden-frame tests. VIMRUNTIME may point at an unpacked Vim
 | INS-01 insert/append/open | done | insert, append, open line, replace-char |
 | EX-01 Ex parser | done | ranges, addresses, marks, search addresses, modifiers |
 | ENC-01 UTF-8 internal model | done | byte strings, Unicode width table |
-| TST-01 test harness | done | 546 workspace tests at last run |
+| TST-01 test harness | done | 571 workspace tests at last run |
 
 P0 is complete.  Options gated behind unimplemented features (GUI, terminal,
 spell, diff, sessions, Python/Ruby/etc.) are absent from `:set`, completion
 and `exists("+name")`, matching a Vim built without those features.
 
 ## P1 - daily driver
+
+P1 is complete: all 148 P1 catalog features are implemented and covered by
+tests; [BACKLOG-P0-P1.md](BACKLOG-P0-P1.md) tracks 177/177 done. The remaining
+notes below the feature list are explicit exclusions or documented
+approximations, not open P1 work.
 
 Implemented and exercised by tests:
 
@@ -161,23 +166,53 @@ Implemented and exercised by tests:
 - **Testing/tooling:** 80x24, 120x40, cursor, wide-character, popup and per-cell attribute/palette golden snapshots; deterministic randomized regex/syntax fuzz smoke test; libFuzzer/cargo-fuzz targets under fuzz/ (regex, syntax, VimL) that compile with `cargo check --manifest-path fuzz/Cargo.toml`, plus a scheduled weekly fuzz workflow; std-only benchmark targets under crates/rvim-headless/benches covering startup, frame render, large-file open, regex scans and syntax highlighting.
 - **VimL/regex:** =~, matchstr(), match(), substitute() and :catch use the full Vim regex engine (lookaround including \@N limits, \zs/\ze, backrefs, classes). Vim's syntax atoms are supported: \z( groups with cross-pattern \z1 references in :syntax region end/skip patterns, \%[ optional sequences, \& conjunction, \%( groups (including a redundant backslash as in \%\(), \%d/\%o/\%x/\%u/\%U character escapes, \%#=N engine selectors, \Z, and contextual \% atoms (compiled as never-matching because the crate has no editor context). Multi-byte class members are approximated by their UTF-8 bytes and reverse class ranges are treated as literals, matching Vim's permissive runtime behaviour.
 - **Syntax:** multi-line regions terminate correctly on later lines; matchgroup delimiter highlighting, oneline regions, nextgroup chaining, contains=/containedin= filtering across multi-line and same-line regions, contained-only items, and option-token filtering are supported. Region `start=`/`end=`/`skip=` options are tokenised like Vim's skip_regexp(), so delimiters and spaces inside `[...]` collections or patterns do not break parsing; `\z(...)` captures are substituted into dynamic end patterns.
+- **Command-line window:** the left column shows the command-line type character
+  (`:`, `/`, `?`), `'insertmode'` opens the window in Insert mode, and
+  CTRL-C continues on the command line with the text under the cursor.
+- **Tag selection and preview:** `:tselect` and `:ptselect` prompt for a
+  candidate number and jump or preview the selection, `:psearch` searches the
+  current file and its included files for an identifier and shows the match in
+  the preview window, and `:find`/`:sfind` search `'path'` (including
+  wildcards and `**`).
+- **Startup and plugins:** packages in `pack/*/start` are added to
+  `'runtimepath'`, `plugin/**/*.vim` is sourced in runtimepath order with
+  `after/plugin` last, and `ftplugin`/`indent` scripts load in Vim order
+  including `after/ftplugin` and `after/indent`. Nested autoload prefixes
+  (`foo#bar#Baz()` → `autoload/foo/bar.vim`) load on demand.
+- **Errorformat:** literal-prefix anchoring, `%+`/`%-` modifiers,
+  `%N`/`%>`/`%O`/`%b`/`%s`/`%o`/`%r`/`%p`, `%*[a-z]` range and
+  negated scan classes, character classes and escaped meta conversions.
+- **Mouse:** popup item clicks (message/echo popup dismissal and completion
+  popup selection) and all `ActionKind` hit-region actions are handled.
+- **Feature flags:** `has('find_id')` is now 1 so `'include'`/`'path'`
+  based lookups are available; scheduled fuzzing runs for 10 minutes per
+  target.
 
-Still missing or partial in P1:
+Explicit exclusions and documented approximations (not open P1 work):
 
-- Completion contexts cover buffers/functions/variables/syntax/compiler/colorscheme; some Vim cmdwin-specific conveniences (type column, cmdwin insert-mode start) are not reproduced.
-- :ptselect lists candidates and previews the first match; the interactive select-then-preview step and :psearch are not implemented.
-- Full shell quoting matrix and remaining errorformat corner cases (%D/%X directory stacks are supported).
-- Vim9-script runtime files are out of scope and reported as `E319` (compiler/context.vim and several newer syntax files such as 2html, context, csv, hare, help, hlsl, java and tsv).
-- `syntax/glimmer.vim` only loads after a JavaScript/TypeScript syntax file has set `b:current_syntax`; sourcing it standalone fails in Vim too, so the Tier C check is environment dependent.
-- The basic autoload loader covers script-level autoload files; deeper autoload and full legacy VimL semantics are still incomplete.
-- Concealment remains P2 (`has('conceal')` is 0); the conceal options are
-  accepted and stored so runtime files load. Folding is implemented, see the
-  P2 section.
-- Package after/ ordering and full startup-file ordering; :packadd/:packloadall and tags completion are present.
-- Closure-capturing Lambda Shada values (simple lambdas, named/partial Funcref, Number/String/Bool/List/Dict/Blob/Special and buffer lists are persisted). multi-level persistent undo, viminfo startup/shutdown and basic :mksession/:mkview/:loadview are present.
-- Remaining niche C++/Java cinoptions items; wrapped-line mouse mapping, wheel/chunk-level and partial-column smoothscroll are supported. keyword, completefunc and omnifunc completion plus indentexpr/cindent/cinkeys/lisp/showbreak/breakindent/display-line motions/chunk smoothscroll with cursor mapping are supported.
-- Remaining widget hit-region actions; per-window/global multi-row statuslines, statusline/tabline clicks and draggable split borders are present.
-- Longer continuous fuzzing runs; libFuzzer targets, a scheduled weekly workflow, deterministic fuzz smoke tests and text/popup/wide-char/attribute golden snapshots are present.
+- Vim9-script runtime files are out of scope and reported as `E319`
+  (`compiler/context.vim` and several newer syntax files such as 2html,
+  context, csv, hare, help, hlsl, java and tsv).
+- `syntax/glimmer.vim` only loads after a JavaScript/TypeScript syntax file has
+  set `b:current_syntax`; sourcing it standalone fails in Vim too, so the
+  Tier C check is environment dependent rather than an RVim gap.
+- Concealment is P2 (`has('conceal')` is 0); the conceal options are accepted
+  and stored so runtime files load. Folding/signs/text properties/diff are
+  implemented, see the P2 section.
+- Shell quoting implements the tested POSIX `'shellquote'`/`'shellxquote'`/
+  `'shellxescape'` matrix; the Windows `cmd.exe` quoting subset is covered but
+  exotic shell combinations are not exhaustively tested.
+- The legacy VimL engine implements nested autoload loading and the tested
+  language surface; untested upstream edge semantics (rare parser corner cases,
+  deep closure scoping) remain approximate.
+- `cindent` covers the C/C++/Java control-word and `'cinoptions'` set used by
+  the tests; niche flags such as `/N`, `#N`, `PN`, `jN`, `mN`, `MN` are
+  parsed but only the documented tested subset changes indentation.
+- Viminfo persists simple lambdas by their source; closure-capturing lambdas
+  are stored without their captured variables. Vim itself does not persist
+  lambdas at all, so this is a deliberate extension rather than a parity gap.
+- Fuzzing runs for 10 minutes per target in the weekly workflow; longer
+  continuous fuzzing is a CI budget decision.
 
 ## P2 - display subsystems
 
@@ -267,7 +302,7 @@ cargo test --workspace
 cargo clippy --workspace --all-targets -- -D warnings
 ~~~
 
-At the time of writing the workspace has 546 tests and no clippy warnings.
+At the time of writing the workspace has 571 tests and no clippy warnings.
 The optional PTY smoke script is tools/pty_smoke.py; some sandboxes deny
 openpty, so it is not part of the required CI gate yet.
 
@@ -286,3 +321,11 @@ openpty, so it is not part of the required CI gate yet.
   folds after jumps, and the `syntax`/`diff` fold methods produce no folds.
 - Sign placement is anchored with stable line ids; deleting the anchored line
   removes the sign, as in Vim. Icons and `culhl` are not rendered.
+- Shell quoting covers the tested POSIX matrix; the Windows `cmd.exe` quoting
+  subset is covered but exotic shell combinations are not exhaustively tested.
+- `cindent` covers the C/C++/Java control-word and `'cinoptions'` set used by
+  the tests; niche flags such as `/N`, `#N`, `PN`, `jN`, `mN`, `MN` are
+  parsed but only the tested subset changes indentation.
+- Viminfo stores simple lambdas by source; closure-capturing lambdas keep their
+  source but not captured variables. Vim does not persist lambdas at all, so
+  this is a deliberate extension.

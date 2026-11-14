@@ -194,6 +194,7 @@ fn secure_disallowed(command: &ExCommand) -> bool {
     write || shell || autocmd || read_filter
 }
 fn execute_command_inner(editor: &mut Editor, command: ExCommand) -> Result<(), VimError> {
+    editor.cancel_tag_select();
     if editor.secure_sourcing && secure_disallowed(&command) {
         return Err(VimError::new(
             12,
@@ -833,6 +834,44 @@ fn execute_command_inner(editor: &mut Editor, command: ExCommand) -> Result<(), 
         "tfirst" | "tf" => editor.tag_first()?,
         "tlast" | "tl" => editor.tag_last()?,
         "trewind" | "tr" => editor.tag_first()?,
+        "find" | "fin" => {
+            let name = command.args.trim();
+            if name.is_empty() {
+                return Err(VimError::new(471, "Argument required"));
+            }
+            match editor.find_file_in_path(name) {
+                Some(path) => editor.open_path(&path)?,
+                None => {
+                    return Err(VimError::new(
+                        345,
+                        format!("Can't find file \"{name}\" in 'path'"),
+                    ))
+                }
+            }
+        }
+        "sfind" | "sf" => {
+            let name = command.args.trim();
+            if name.is_empty() {
+                return Err(VimError::new(471, "Argument required"));
+            }
+            let Some(path) = editor.find_file_in_path(name) else {
+                return Err(VimError::new(
+                    345,
+                    format!("Can't find file \"{name}\" in 'path'"),
+                ));
+            };
+            editor.split_window(rvim_view::SplitDir::Horizontal, Some(&path))?;
+        }
+        "psearch" | "ps" => {
+            let mut name = command.args.trim().to_string();
+            if name.is_empty() {
+                name = editor.keyword_under_cursor().unwrap_or_default();
+            }
+            if name.is_empty() {
+                return Err(VimError::new(471, "Argument required"));
+            }
+            editor.preview_search(&name, command.bang)?;
+        }
         "ptag" | "pta" => {
             let mut name = command.args.trim().to_string();
             if name.is_empty() {
@@ -851,9 +890,8 @@ fn execute_command_inner(editor: &mut Editor, command: ExCommand) -> Result<(), 
             if name.is_empty() {
                 return Err(VimError::new(471, "Argument required"));
             }
-            // Show the candidate list like :tselect, then preview the first match.
-            editor.tag_select(&name)?;
-            editor.open_preview_tag(&name)?;
+            // Like :tselect, but show the selected tag in the preview window.
+            editor.preview_tag_select(&name)?;
         }
         "pedit" | "ped" => {
             let path = resolve_file_arg(editor, command.args.trim())?;

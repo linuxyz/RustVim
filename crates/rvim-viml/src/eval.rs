@@ -566,9 +566,13 @@ pub(crate) fn get_var(ctx: &mut Ctx, scope: Option<Scope>, name: &VimString) -> 
 
 /// Source the autoload script for a `prefix#name` variable or function once.
 fn autoload_for(ctx: &mut Ctx, name: &str) -> Result<()> {
-    let Some((prefix, _)) = name.split_once('#') else {
+    let parts: Vec<&str> = name.split('#').collect();
+    if parts.len() < 2 {
         return Ok(());
-    };
+    }
+    // Vim maps "foo#bar#Baz()" to autoload/foo/bar.vim: everything before the
+    // last '#' component.
+    let prefix = parts[..parts.len() - 1].join("/");
     if prefix.is_empty() {
         return Ok(());
     }
@@ -576,7 +580,7 @@ fn autoload_for(ctx: &mut Ctx, name: &str) -> Result<()> {
     if ctx.runtime.has_script_name(&expected) {
         return Ok(());
     }
-    if let Some((path, bytes)) = ctx.host.autoload_script(prefix)? {
+    if let Some((path, bytes)) = ctx.host.autoload_script(&prefix)? {
         crate::script::run_sourced_script(ctx, &path, &bytes)?;
     }
     Ok(())

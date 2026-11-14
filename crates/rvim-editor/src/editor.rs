@@ -382,6 +382,13 @@ pub struct Editor {
     pub sign_version: u64,
     /// Global text property types (prop_type_add without "bufnr").
     pub prop_types: HashMap<String, crate::textprop::PropType>,
+    /// Tag selection prompt state: Some(true) shows the picked tag in the
+    /// preview window (:ptselect), Some(false) jumps to it (:tselect).
+    pub tag_select_preview: Option<bool>,
+    /// Digits typed at the tag selection prompt.
+    pub tag_select_digits: String,
+    /// Plugin scripts already sourced at startup (to keep reloads idempotent).
+    pub loaded_plugin_files: std::collections::HashSet<std::path::PathBuf>,
     pub search_pattern: Option<String>,
     pub search_highlight_active: bool,
     pub search_origin: Option<BufPos>,
@@ -583,6 +590,9 @@ impl Editor {
             sign_defs: HashMap::new(),
             sign_version: 0,
             prop_types: HashMap::new(),
+            tag_select_preview: None,
+            tag_select_digits: String::new(),
+            loaded_plugin_files: std::collections::HashSet::new(),
             search_pattern: None,
             search_highlight_active: false,
             search_origin: None,
@@ -931,6 +941,9 @@ impl Editor {
     }
 
     pub fn handle_key(&mut self, key: KeyEvent) {
+        if self.handle_tag_select_key(&key) {
+            return;
+        }
         if key.kind == KeyKind::Release {
             return;
         }
@@ -1202,7 +1215,7 @@ impl Editor {
             return;
         }
         if self.cmdwin.is_some() && key.mods.contains(Mods::CTRL) && key.key == Key::Char('c') {
-            self.close_cmdwin();
+            self.cmdwin_continue_command_line();
             return;
         }
         if self.pending_register == Some('"') {
@@ -1509,24 +1522,25 @@ impl Editor {
         if filetype.is_empty() {
             return;
         }
+        let mut scripts = Vec::new();
         if self.filetype_plugin {
-            if let Some(path) = self.runtime.find(&format!("ftplugin/{filetype}.vim")) {
-                if let Ok(text) = std::fs::read(&path) {
-                    if let Err(error) = self.source_viml(&text, &path.display().to_string()) {
-                        self.messages
-                            .error(format!("ftplugin {}: {error}", path.display()));
-                    }
-                }
-            }
+            scripts.extend(self.collect_filetype_scripts("ftplugin", &filetype));
         }
         if self.filetype_indent {
-            if let Some(path) = self.runtime.find(&format!("indent/{filetype}.vim")) {
-                if let Ok(text) = std::fs::read(&path) {
-                    if let Err(error) = self.source_viml(&text, &path.display().to_string()) {
-                        self.messages
-                            .error(format!("indent {}: {error}", path.display()));
-                    }
-                }
+            scripts.extend(self.collect_filetype_scripts("indent", &filetype));
+        }
+        let mut seen = std::collections::HashSet::new();
+        for path in scripts {
+            let key = std::fs::canonicalize(&path).unwrap_or_else(|_| path.clone());
+            if !seen.insert(key) {
+                continue;
+            }
+            let Ok(text) = rvim_platform::fs::read_file(&path) else {
+                continue;
+            };
+            if let Err(error) = self.source_viml(&text, &path.display().to_string()) {
+                self.messages
+                    .error(format!("filetype script {}: {error}", path.display()));
             }
         }
     }
@@ -2356,6 +2370,193 @@ impl Editor {
         result
     }
 
+    /// Find a file the way :find and gf do: first directly, then through
+    /// 'path' (including wildcards and **).
+    pub(crate) fn find_file_in_path(&self, name: &str) -> Option<std::path::PathBuf> {
+        let name = rvim_platform::fs::expand_env(name)
+            .to_string_lossy()
+            .into_owned();
+        let direct = std::path::PathBuf::from(&name);
+        if direct.is_file() {
+            return Some(direct);
+        }
+        let path_option = self.options.get_string("path");
+        for entry in path_option.split(',') {
+            let entry = if entry.is_empty() { "." } else { entry };
+            let pattern = format!("{}/{}", entry.trim_end_matches(['/', '\\']), name);
+            if let Some(candidate) = crate::glob::expand(&pattern).into_iter().next() {
+                if candidate.is_file() {
+                    return Some(candidate);
+                }
+            }
+        }
+        None
+    }
+
+    /// :psearch: find \p identifier in the current file and the files it
+    /// includes and show the first match in the preview window.
+    pub(crate) fn preview_search(
+        &mut self,
+        identifier: &str,
+        list_all: bool,
+    ) -> Result<(), VimError> {
+        let identifier = identifier.trim();
+        if identifier.is_empty() {
+            return Err(VimError::new(471, "Argument required"));
+        }
+        let current_path = self
+            .current_buffer()
+            .and_then(|buffer| buffer.text.meta.name.clone());
+        let include_pattern = self
+            .current_buffer()
+            .map(|buffer| {
+                self.options
+                    .buffer_string(rvim_types::Id::raw(buffer.id), "include")
+            })
+            .unwrap_or_default();
+        let mut files: Vec<std::path::PathBuf> = Vec::new();
+        if let Some(path) = &current_path {
+            files.push(path.clone());
+        }
+        let mut visited: std::collections::HashSet<std::path::PathBuf> =
+            std::collections::HashSet::new();
+        let mut matches: Vec<(std::path::PathBuf, u32, u32, String)> = Vec::new();
+        let mut index = 0usize;
+        while index < files.len() {
+            let path = files[index].clone();
+            index += 1;
+            if !visited.insert(path.clone()) {
+                continue;
+            }
+            let lines: Vec<Vec<u8>> = if current_path.as_deref() == Some(path.as_path()) {
+                self.current_buffer()
+                    .map(|buffer| {
+                        (1..=buffer.text.line_count())
+                            .map(|lnum| buffer.text.line(lnum).unwrap_or(b"").to_vec())
+                            .collect()
+                    })
+                    .unwrap_or_default()
+            } else {
+                match std::fs::read(&path) {
+                    Ok(bytes) => bytes
+                        .split(|byte| *byte == b'\n')
+                        .map(|line| line.strip_suffix(b"\r").unwrap_or(line).to_vec())
+                        .collect(),
+                    Err(_) => continue,
+                }
+            };
+            // Find the identifier (whole keyword) in this file.
+            let word = identifier.as_bytes();
+            for (lnum, line) in lines.iter().enumerate() {
+                let mut start = 0usize;
+                while start + word.len() <= line.len() {
+                    let Some(offset) = line[start..]
+                        .windows(word.len())
+                        .position(|window| window == word)
+                    else {
+                        break;
+                    };
+                    let position = start + offset;
+                    let before_ok = position == 0 || !is_keyword_byte(line[position - 1]);
+                    let after = position + word.len();
+                    let after_ok = after >= line.len() || !is_keyword_byte(line[after]);
+                    if before_ok && after_ok {
+                        matches.push((
+                            path.clone(),
+                            lnum as u32 + 1,
+                            position as u32,
+                            String::from_utf8_lossy(line).into_owned(),
+                        ));
+                        break;
+                    }
+                    start = position + 1;
+                }
+            }
+            // Collect included files for the next rounds.
+            if !include_pattern.is_empty() && index <= 64 && files.len() < 256 {
+                let regex = rvim_regex::compile(
+                    include_pattern.as_bytes(),
+                    rvim_regex::Magic::Magic,
+                    false,
+                );
+                if let Ok(regex) = regex {
+                    let base_dir = path
+                        .parent()
+                        .map(std::path::Path::to_path_buf)
+                        .unwrap_or_default();
+                    for line in &lines {
+                        let Some(found) = regex.find(line) else {
+                            continue;
+                        };
+                        let rest = String::from_utf8_lossy(&line[found.end..]);
+                        let name = rest
+                            .trim_start_matches(|ch: char| ch.is_whitespace())
+                            .trim_matches(|ch: char| {
+                                ch == '"' || ch == '<' || ch == '>' || ch == ';'
+                            })
+                            .split_whitespace()
+                            .next()
+                            .unwrap_or("");
+                        if name.is_empty() {
+                            continue;
+                        }
+                        let candidate = if std::path::Path::new(name).is_absolute() {
+                            std::path::PathBuf::from(name)
+                        } else {
+                            base_dir.join(name)
+                        };
+                        if candidate.is_file() {
+                            files.push(candidate);
+                        }
+                    }
+                }
+            }
+        }
+        if matches.is_empty() {
+            return Err(VimError::new(
+                486,
+                format!("Pattern not found: {identifier}"),
+            ));
+        }
+        if list_all {
+            let text = matches
+                .iter()
+                .map(|(path, lnum, col, line)| {
+                    format!("{}:{}:{}: {}", path.display(), lnum, col + 1, line.trim())
+                })
+                .collect::<Vec<_>>()
+                .join("\n");
+            self.messages.info(text);
+            return Ok(());
+        }
+        let (path, lnum, col, _line) = matches[0].clone();
+        let origin = self.view.current_window().map(|window| window.id);
+        let preview = self.ensure_preview_window()?;
+        self.view.set_current_window(preview);
+        self.sync_current_buffer_to_window();
+        let already_open = self
+            .current_buffer()
+            .and_then(|buffer| buffer.text.meta.name.clone())
+            .as_deref()
+            == Some(path.as_path());
+        let result = (|| -> Result<(), VimError> {
+            if !already_open {
+                self.open_path(&path)?;
+            }
+            let len = self
+                .current_buffer()
+                .map_or(0, |buffer| buffer.text.line_len(self.cursor().lnum.max(1)));
+            self.set_cursor(BufPos::new(lnum, col.min(len.saturating_sub(1))));
+            Ok(())
+        })();
+        if let Some(origin) = origin {
+            self.view.set_current_window(origin);
+            self.sync_current_buffer_to_window();
+        }
+        self.request_redraw();
+        result
+    }
+
     /// Implements :pclose / CTRL-W z.
     pub(crate) fn close_preview(&mut self) -> Result<(), VimError> {
         let Some(id) = self.preview_window.take() else {
@@ -2458,8 +2659,97 @@ impl Editor {
                 entry.command
             ));
         }
-        self.messages.info(text.trim_end().to_string());
+        self.messages
+            .info(format!("{}\nEnter number: ", text.trim_end()));
+        self.tag_select_preview = Some(false);
+        self.tag_select_digits.clear();
         Ok(())
+    }
+
+    /// Cancel a pending :tselect/:ptselect prompt.
+    pub(crate) fn cancel_tag_select(&mut self) {
+        self.tag_select_preview = None;
+        self.tag_select_digits.clear();
+    }
+
+    /// Handle a key while the :tselect prompt is waiting for a number.
+    /// Returns true when the key was consumed.
+    pub(crate) fn handle_tag_select_key(&mut self, key: &KeyEvent) -> bool {
+        if self.tag_select_preview.is_none() {
+            return false;
+        }
+        match key.key {
+            Key::Char(ch) if ch.is_ascii_digit() => {
+                if self.tag_select_digits.len() < 6 {
+                    self.tag_select_digits.push(ch);
+                    let digits = self.tag_select_digits.clone();
+                    self.messages.info(format!("Enter number: {digits}"));
+                }
+            }
+            Key::Backspace => {
+                self.tag_select_digits.pop();
+                let digits = self.tag_select_digits.clone();
+                self.messages.info(format!("Enter number: {digits}"));
+            }
+            Key::Enter => {
+                let digits = std::mem::take(&mut self.tag_select_digits);
+                let preview = self.tag_select_preview.take().unwrap_or(false);
+                let index = digits.parse::<usize>().unwrap_or(0);
+                if index == 0 || index > self.tag_matches.len() {
+                    self.messages
+                        .info(format!("E: invalid selection: {digits}"));
+                    self.request_redraw();
+                    return true;
+                }
+                let entry = self.tag_matches[index - 1].clone();
+                let name = entry.name.clone();
+                let result = if preview {
+                    self.preview_tag_entry(entry)
+                } else {
+                    self.jump_to_tag_entry(entry, &name)
+                };
+                if let Err(error) = result {
+                    self.set_error(error);
+                }
+            }
+            Key::Esc => {
+                self.cancel_tag_select();
+                self.messages.clear();
+            }
+            Key::Char('c') if key.mods.contains(Mods::CTRL) => {
+                self.cancel_tag_select();
+                self.messages.clear();
+            }
+            _ => {}
+        }
+        self.request_redraw();
+        true
+    }
+
+    /// :ptselect - same prompt as :tselect but show the tag in the preview.
+    pub(crate) fn preview_tag_select(&mut self, name: &str) -> Result<(), VimError> {
+        self.tag_select(name)?;
+        self.tag_select_preview = Some(true);
+        Ok(())
+    }
+
+    /// Show one tag entry in the preview window.
+    pub(crate) fn preview_tag_entry(
+        &mut self,
+        entry: crate::tags::TagEntry,
+    ) -> Result<(), VimError> {
+        let origin = self.view.current_window().map(|window| window.id);
+        let preview = self.ensure_preview_window()?;
+        self.view.set_current_window(preview);
+        self.sync_current_buffer_to_window();
+        let name = entry.name.clone();
+        let result = self.jump_to_tag_entry(entry, &name);
+        if let Some(origin) = origin {
+            self.view.set_current_window(origin);
+            self.sync_current_buffer_to_window();
+        }
+        self.request_redraw();
+        result
     }
 
     pub(crate) fn tag_jump(&mut self, name: &str) -> Result<(), VimError> {
@@ -3729,10 +4019,21 @@ impl Editor {
         }
         let line_count = self.line_count().max(1);
         let frame_action = self.view.last_frame.as_ref().and_then(|frame| {
+            // Popup layers are on top: prefer a popup hit region over the
+            // window region underneath it.
             frame
                 .hit_regions
                 .iter()
-                .find(|region| region.rect.contains(mouse.row, mouse.col))
+                .find(|region| {
+                    matches!(region.action.kind, ActionKind::PopupItem)
+                        && region.rect.contains(mouse.row, mouse.col)
+                })
+                .or_else(|| {
+                    frame
+                        .hit_regions
+                        .iter()
+                        .find(|region| region.rect.contains(mouse.row, mouse.col))
+                })
                 .cloned()
         });
         if let Some(region) = &frame_action {
@@ -3849,6 +4150,30 @@ impl Editor {
                     self.request_redraw();
                     return;
                 }
+                ActionKind::PopupItem => {
+                    if mouse.kind == MouseKind::Press {
+                        if region.action.id == 0 {
+                            // Message / echo-window popup: dismiss it.
+                            self.messages.clear();
+                            self.hit_enter = false;
+                        } else if let Some(mut state) = self.cmdline_completion.take() {
+                            // Completion popup: select the clicked candidate.
+                            let offset = mouse.row.saturating_sub(region.rect.row) as usize;
+                            if offset < state.candidates.len() {
+                                state.index = offset;
+                                let candidate = state.candidates[offset].clone();
+                                if state.start <= self.cmdline.text.len() {
+                                    self.cmdline.text.truncate(state.start);
+                                    self.cmdline.text.push_str(&candidate);
+                                    self.cmdline.cursor = self.cmdline.text.len();
+                                }
+                                self.cmdline_completion = Some(state);
+                            }
+                        }
+                    }
+                    self.request_redraw();
+                    return;
+                }
                 ActionKind::Sign => {
                     let target_window = self
                         .view
@@ -3872,7 +4197,6 @@ impl Editor {
                     }
                     return;
                 }
-                _ => {}
             }
         }
         let rects = self.view.layout_rects(0, 0);
@@ -5195,6 +5519,14 @@ impl Editor {
             kind,
             backward,
         });
+        let type_char = match kind {
+            CommandKind::Ex => ':',
+            CommandKind::Search if backward => '?',
+            CommandKind::Search => '/',
+        };
+        if let Some(window) = self.view.current_window_mut() {
+            window.cmdwin_type = Some(type_char);
+        }
         let last = lines.len().max(1) as u32;
         self.set_cursor(BufPos::new(last, 0));
         // Size the window from 'cmdwinheight'.
@@ -5207,6 +5539,9 @@ impl Editor {
         self.mode = Mode::Normal;
         self.sync_window_options();
         self.update_window_buffer();
+        if self.options.get_bool("insertmode") {
+            self.enter_insert(InsertKind::EndOfLine);
+        }
         self.request_redraw();
         Ok(())
     }
@@ -5242,6 +5577,28 @@ impl Editor {
             }
         }
         let _ = state.return_buffer;
+        self.request_redraw();
+    }
+
+    /// CTRL-C in the command-line window: continue on the command line with
+    /// the text under the cursor.
+    fn cmdwin_continue_command_line(&mut self) {
+        let Some(state) = self.cmdwin.as_ref() else {
+            return;
+        };
+        let kind = state.kind;
+        let backward = state.backward;
+        let line = self
+            .line(self.cursor().lnum)
+            .map(|bytes| String::from_utf8_lossy(bytes).into_owned())
+            .unwrap_or_default();
+        self.close_cmdwin();
+        self.begin_command(kind);
+        if backward && kind == CommandKind::Search {
+            self.cmdline.prompt = '?';
+        }
+        self.cmdline.text = line;
+        self.cmdline.cursor = self.cmdline.text.len();
         self.request_redraw();
     }
 
@@ -8608,6 +8965,125 @@ impl Editor {
         );
     }
 
+    /// Load startup plugins like Vim does after the vimrc: package start
+    /// directories are added to 'runtimepath', then plugin/**/*.vim is sourced
+    /// in runtimepath order, with after/plugin directories last.
+    pub fn load_plugins(&mut self) -> Result<(), VimError> {
+        if !self.options.get_bool("loadplugins") {
+            return Ok(());
+        }
+        // Packages in pack/*/start are added to 'runtimepath' before plugins.
+        let packpath = self.options.get_string("packpath");
+        let mut start_dirs = Vec::new();
+        for entry in rvim_runtime::split_runtimepath(&packpath) {
+            let entry = rvim_platform::fs::expand_env(&entry.to_string_lossy());
+            let Ok(packages) = std::fs::read_dir(entry.join("pack")) else {
+                continue;
+            };
+            let mut packages: Vec<_> = packages.flatten().collect();
+            packages.sort_by_key(|package| package.file_name());
+            for package in packages {
+                let start = package.path().join("start");
+                let Ok(dirs) = std::fs::read_dir(&start) else {
+                    continue;
+                };
+                let mut dirs: Vec<_> = dirs.flatten().collect();
+                dirs.sort_by_key(|dir| dir.file_name());
+                for dir in dirs {
+                    if !dir.path().is_dir() {
+                        continue;
+                    }
+                    let name = dir.file_name().to_string_lossy().into_owned();
+                    if self.loaded_packages.insert(name) {
+                        start_dirs.push(dir.path());
+                    }
+                }
+            }
+        }
+        for dir in start_dirs {
+            self.add_runtimepath_entry(&dir);
+        }
+        // Collect plugin files from runtimepath; after directories go last.
+        let entries = self.runtime.expanded_runtimepath();
+        let mut normal = Vec::new();
+        let mut after = Vec::new();
+        for entry in entries {
+            let is_after = entry.file_name().is_some_and(|name| name == "after");
+            let plugin_dir = entry.join("plugin");
+            if is_after {
+                collect_vim_files(&plugin_dir, &mut after);
+            } else {
+                collect_vim_files(&plugin_dir, &mut normal);
+            }
+        }
+        normal.sort();
+        after.sort();
+        normal.dedup();
+        after.dedup();
+        for path in normal.into_iter().chain(after) {
+            let key = std::fs::canonicalize(&path).unwrap_or_else(|_| path.clone());
+            if !self.loaded_plugin_files.insert(key) {
+                continue;
+            }
+            let Ok(text) = rvim_platform::fs::read_file(&path) else {
+                continue;
+            };
+            if let Err(error) = self.source_viml(&text, &path.display().to_string()) {
+                self.messages
+                    .error(format!("plugin {}: {error}", path.display()));
+            }
+        }
+        Ok(())
+    }
+
+    /// Collect ftplugin/indent files for a filetype in Vim order: the runtime
+    /// path order, "{ft}.vim" before "{ft}_*.vim" (sorted), then the after
+    /// directories.
+    fn collect_filetype_scripts(&self, dir: &str, filetype: &str) -> Vec<std::path::PathBuf> {
+        let mut normal = Vec::new();
+        let mut after = Vec::new();
+        for entry in self.runtime.expanded_runtimepath() {
+            let is_after = entry.file_name().is_some_and(|name| name == "after");
+            let base = entry.join(dir);
+            let Ok(entries) = std::fs::read_dir(&base) else {
+                continue;
+            };
+            let prefix = format!("{filetype}_");
+            let exact = format!("{filetype}.vim");
+            let mut names: Vec<(String, std::path::PathBuf)> = entries
+                .flatten()
+                .filter_map(|entry| {
+                    let name = entry.file_name().to_string_lossy().into_owned();
+                    if name == exact || (name.starts_with(&prefix) && name.ends_with(".vim")) {
+                        Some((name, entry.path()))
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            names.sort();
+            // The exact name comes before the "{ft}_" files.
+            let mut ordered: Vec<std::path::PathBuf> = names
+                .iter()
+                .filter(|(name, _)| name == &exact)
+                .map(|(_, path)| path.clone())
+                .collect();
+            ordered.extend(
+                names
+                    .into_iter()
+                    .filter(|(name, _)| name != &exact)
+                    .map(|(_, path)| path),
+            );
+            if is_after {
+                after.extend(ordered);
+            } else {
+                normal.extend(ordered);
+            }
+        }
+        normal.extend(after);
+        normal
+    }
+
     fn source_package_plugins(&mut self, dir: &std::path::Path) -> Result<(), VimError> {
         let mut files = Vec::new();
         collect_vim_files(&dir.join("plugin"), &mut files);
@@ -9418,6 +9894,10 @@ enum InsertKind {
     OpenBelow,
     OpenAbove,
     Replace,
+}
+
+fn is_keyword_byte(byte: u8) -> bool {
+    byte.is_ascii_alphanumeric() || byte == b'_'
 }
 
 fn find_subslice(haystack: &[u8], needle: &[u8]) -> bool {

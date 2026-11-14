@@ -1,8 +1,10 @@
 # RVim：Rust 实现的 Vim
 
-**状态：** 已有可构建实现。16 个 crate 组成的工作区提供 TUI 与 headless
-编辑器；P0 基本完成，P1 已覆盖编辑、正则搜索、VimL、syntax、runtime/help、
-窗口/tab、映射和 autocmd 等主体。逐项状态与剩余缺口见
+**状态：** 16 个 crate 组成的工作区提供 TUI 与 headless 编辑器；P0 与 P1
+已全部完成——177 个 P0/P1 目录特性均已实现并有测试覆盖（编辑、正则搜索、
+VimL、syntax、runtime/help、窗口/tab、映射、autocmd、quickfix/tags/sessions
+等日常可用面），并且已实现 P2 的折叠、signs、text properties 与两路 diff
+子系统。逐项状态、已记录的近似项与剩余 P2/P3 工作见
 [docs/STATUS.md](docs/STATUS.md)。
 
 **目标：** 对齐 Vim 9.2.1338 的可观察行为。  

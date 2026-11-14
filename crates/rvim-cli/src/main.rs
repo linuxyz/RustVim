@@ -30,6 +30,7 @@ struct Args {
     keys: String,
     startuptime: Option<PathBuf>,
     no_swap: bool,
+    no_plugin: bool,
     recover: bool,
     vimrc: Option<String>,
     session: Option<PathBuf>,
@@ -297,6 +298,18 @@ fn make_editor(args: &Args, size: Size) -> Editor {
             rvim_editor::OptionValue::String(rvim_types::VimString::new()),
         );
     }
+    if args.no_plugin {
+        let _ = editor
+            .options
+            .set_global("loadplugins", rvim_editor::OptionValue::Bool(false));
+    }
+    // Plugins load after startup files, packages first (like Vim).  -u NONE,
+    // -u DEFAULTS and --clean skip plugin loading, as Vim does.
+    if !args.clean && !args.defaults_only {
+        if let Err(error) = editor.load_plugins() {
+            editor.messages.error(error.to_string());
+        }
+    }
     editor
 }
 
@@ -365,7 +378,7 @@ fn parse_args() -> Result<Args, String> {
             "--version" | "-v" => args.version = true,
             "--help" | "-h" => args.help = true,
             "--clean" => args.clean = true,
-            "--noplugin" => {}
+            "--noplugin" => args.no_plugin = true,
             "-n" => args.no_swap = true,
             "--no-swap" => args.no_swap = true,
             "-R" | "--readonly" => args.readonly = true,

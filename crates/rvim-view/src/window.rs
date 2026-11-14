@@ -122,6 +122,9 @@ pub struct Window {
     pub folds: FoldState,
     /// Window-local diff state, maintained by the editor.
     pub diff: DiffState,
+    /// Command-line window type character shown in the first column (':' for
+    /// an Ex command window, '/' or '?' for a search window).
+    pub cmdwin_type: Option<char>,
     /// Signs displayed in this window, maintained by the editor.
     pub signs: SignState,
 }
@@ -151,6 +154,7 @@ impl Window {
             visual: None,
             folds: FoldState::default(),
             diff: DiffState::default(),
+            cmdwin_type: None,
             signs: SignState::default(),
         }
     }
@@ -280,7 +284,8 @@ impl Window {
         };
         let signs = self.signcolumn_width();
         let folds = self.options.foldcolumn as u16;
-        self.width.saturating_sub(number + signs + folds)
+        let cmdwin = u16::from(self.cmdwin_type.is_some());
+        self.width.saturating_sub(number + signs + folds + cmdwin)
     }
 
     pub fn status_height(&self) -> u16 {

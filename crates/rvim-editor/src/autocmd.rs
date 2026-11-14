@@ -50,6 +50,10 @@ pub enum Event {
     CmdwinLeave,
     TermResponse,
     User(String),
+    /// An event from Vim's event table that RVim knows but does not fire yet.
+    /// Defining autocmds for it is allowed (runtime plugins do this) and
+    /// :doautocmd can still trigger it explicitly.
+    Other(String),
 }
 
 impl Event {
@@ -102,7 +106,12 @@ impl Event {
             "cmdwinleave" => Self::CmdwinLeave,
             "termresponse" => Self::TermResponse,
             "user" => Self::User(String::new()),
-            _ => return None,
+            _ => {
+                let spec = crate::registry::ALL_EVENTS
+                    .iter()
+                    .find(|spec| spec.name.eq_ignore_ascii_case(name))?;
+                Self::Other(spec.name.to_string())
+            }
         })
     }
 
@@ -154,6 +163,7 @@ impl Event {
             Self::CmdwinLeave => "CmdwinLeave",
             Self::TermResponse => "TermResponse",
             Self::User(_) => "User",
+            Self::Other(name) => name.as_str(),
         }
     }
 }

@@ -5,12 +5,13 @@ cell UI, Vim's own runtime, and QuickJS as an extension language.
 
 [中文说明](README.zh-CN.md)
 
-**Status:** initial implementation. The 16-crate workspace builds a working TUI
-and headless editor with P0 nearly complete and a substantial P1 slice
-(editing, search/regex, VimL, syntax, runtime/help, windows/tabs, mappings and
-autocommands). See [docs/STATUS.md](docs/STATUS.md) for the honest feature-by-
-feature state and remaining gaps. The catalog, architecture and inventory
-documents remain the target definition.
+**Status:** the 16-crate workspace builds a working TUI and headless editor.
+P0 and P1 are complete: all 177 P0/P1 catalog features are implemented and
+tested (editing, search/regex, VimL, syntax, runtime/help, windows/tabs,
+mappings, autocommands, quickfix/tags/sessions and the daily-driver surface).
+The P2 folding, signs, text-property and two-way diff subsystems are also
+implemented. See [docs/STATUS.md](docs/STATUS.md) for the honest feature-by-
+feature state, documented approximations and remaining P2/P3 work.
 
 **Target:** Vim 9.2.1338 behavior.  
 **Not:** Vi/Ex compatibility, Vim9 script (deferred), GUI (interface only),

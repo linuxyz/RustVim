@@ -11,6 +11,6 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@nightly
       - run: cargo install cargo-fuzz --locked
-      - run: cargo fuzz run regex -- -max_total_time=60
-      - run: cargo fuzz run syntax -- -max_total_time=60
-      - run: cargo fuzz run viml -- -max_total_time=60
+      - run: cargo fuzz run regex -- -max_total_time=600
+      - run: cargo fuzz run syntax -- -max_total_time=600
+      - run: cargo fuzz run viml -- -max_total_time=600

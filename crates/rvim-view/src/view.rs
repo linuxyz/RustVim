@@ -745,7 +745,8 @@ impl ViewState {
         };
         let sign_width = window.signcolumn_width();
         let fold_width = window.options.foldcolumn as u16;
-        let gutter_width = fold_width + sign_width + number_width;
+        let cmdwin_width = u16::from(window.cmdwin_type.is_some());
+        let gutter_width = cmdwin_width + fold_width + sign_width + number_width;
         let text_width = rect.text.cols.saturating_sub(gutter_width);
         let topline = normalize_topline(window);
         let leftcol = window.viewport.leftcol;
@@ -859,6 +860,7 @@ impl ViewState {
                     number_width,
                     gutter_width,
                     text_width,
+                    cmdwin_width,
                     folded_attr,
                     foldcolumn_attr,
                     signcolumn_attr,
@@ -954,6 +956,17 @@ impl ViewState {
                         attr,
                     );
                 }
+                if cmdwin_width > 0 {
+                    let ch = if chunk_index == 0 {
+                        window.cmdwin_type.unwrap_or(' ')
+                    } else {
+                        ' '
+                    };
+                    let attr = merge_attr(host.highlight("Normal"), line_background);
+                    frame
+                        .base_mut()
+                        .put_str(screen_row, rect.text.col, &ch.to_string(), attr);
+                }
                 if fold_width > 0 {
                     let attr = if lnum == cursor_lnum {
                         host.highlight("CursorLineFold")
@@ -980,12 +993,17 @@ impl ViewState {
                     };
                     frame.base_mut().put_str(
                         screen_row,
-                        rect.text.col + fold_width,
+                        rect.text.col + cmdwin_width + fold_width,
                         "  ",
                         sign_attr,
                     );
                     frame.hit_regions.push(HitRegion {
-                        rect: Rect::new(screen_row, rect.text.col + fold_width, 1, sign_width),
+                        rect: Rect::new(
+                            screen_row,
+                            rect.text.col + cmdwin_width + fold_width,
+                            1,
+                            sign_width,
+                        ),
                         action: ActionId {
                             kind: ActionKind::Sign,
                             id: rvim_types::Id::raw(window.id),
@@ -1002,7 +1020,7 @@ impl ViewState {
                                 };
                                 frame.base_mut().put_str(
                                     screen_row,
-                                    rect.text.col + fold_width,
+                                    rect.text.col + cmdwin_width + fold_width,
                                     &cell.text,
                                     attr,
                                 );
@@ -1029,7 +1047,7 @@ impl ViewState {
                             }
                             frame.base_mut().put_str(
                                 screen_row,
-                                rect.text.col + fold_width + sign_width,
+                                rect.text.col + cmdwin_width + fold_width + sign_width,
                                 &text,
                                 attr,
                             );
@@ -1066,7 +1084,7 @@ impl ViewState {
                         };
                         frame.base_mut().put_str(
                             screen_row,
-                            rect.text.col + fold_width + sign_width,
+                            rect.text.col + cmdwin_width + fold_width + sign_width,
                             &padded,
                             attr,
                         );
@@ -1277,6 +1295,7 @@ impl ViewState {
         number_width: u16,
         gutter_width: u16,
         text_width: u16,
+        cmdwin_width: u16,
         folded: Attr,
         foldcolumn_attr: Attr,
         signcolumn_attr: Attr,
@@ -1295,6 +1314,12 @@ impl ViewState {
         frame
             .base_mut()
             .fill(Rect::new(row, rect.text.col, 1, rect.text.cols), ' ', base);
+        if cmdwin_width > 0 {
+            let ch = window.cmdwin_type.unwrap_or(':');
+            frame
+                .base_mut()
+                .put_str(row, rect.text.col, &ch.to_string(), base);
+        }
         if fold_width > 0 {
             let attr = if cursor_line {
                 host.highlight("CursorLineFold")
@@ -1304,7 +1329,7 @@ impl ViewState {
             let cells = window.folds.fold_column(start, true, fold_width, fillchars);
             frame.base_mut().put_str(row, rect.text.col, &cells, attr);
             frame.hit_regions.push(HitRegion {
-                rect: Rect::new(row, rect.text.col, 1, fold_width),
+                rect: Rect::new(row, rect.text.col + cmdwin_width, 1, fold_width),
                 action: ActionId {
                     kind: ActionKind::Fold,
                     id: rvim_types::Id::raw(window.id),
@@ -1320,9 +1345,14 @@ impl ViewState {
             };
             frame
                 .base_mut()
-                .put_str(row, rect.text.col + fold_width, "  ", attr);
+                .put_str(row, rect.text.col + cmdwin_width + fold_width, "  ", attr);
             frame.hit_regions.push(HitRegion {
-                rect: Rect::new(row, rect.text.col + fold_width, 1, sign_width),
+                rect: Rect::new(
+                    row,
+                    rect.text.col + cmdwin_width + fold_width,
+                    1,
+                    sign_width,
+                ),
                 action: ActionId {
                     kind: ActionKind::Sign,
                     id: rvim_types::Id::raw(window.id),
@@ -1340,9 +1370,12 @@ impl ViewState {
             let text = format_number(number, &window.options.numberformat);
             let padded = format!("{:>width$} ", text, width = (number_width - 1) as usize);
             let attr = if cursor_line { cursor_line_nr } else { line_nr };
-            frame
-                .base_mut()
-                .put_str(row, rect.text.col + fold_width + sign_width, &padded, attr);
+            frame.base_mut().put_str(
+                row,
+                rect.text.col + cmdwin_width + fold_width + sign_width,
+                &padded,
+                attr,
+            );
         }
         let text = window.folds.text.get(&start).cloned().unwrap_or_else(|| {
             let count = end.saturating_sub(start).saturating_add(1);
