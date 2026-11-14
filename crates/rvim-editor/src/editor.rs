@@ -380,6 +380,8 @@ pub struct Editor {
     pub sign_defs: HashMap<String, crate::signs::SignDef>,
     /// Bumped whenever signs or sign types change.
     pub sign_version: u64,
+    /// Global text property types (prop_type_add without "bufnr").
+    pub prop_types: HashMap<String, crate::textprop::PropType>,
     pub search_pattern: Option<String>,
     pub search_highlight_active: bool,
     pub search_origin: Option<BufPos>,
@@ -580,6 +582,7 @@ impl Editor {
             folds_syncing: false,
             sign_defs: HashMap::new(),
             sign_version: 0,
+            prop_types: HashMap::new(),
             search_pattern: None,
             search_highlight_active: false,
             search_origin: None,

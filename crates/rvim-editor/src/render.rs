@@ -27,6 +27,7 @@ struct EditorHost<'a> {
     tabline_regions: Vec<(u16, u16, u64)>,
     search: Option<&'a rvim_regex::Regex>,
     styles: &'a StyleMap,
+    virtuals: &'a HashMap<(BufferId, u32), Vec<rvim_view::VirtualText>>,
     statuslines: &'a HashMap<WindowId, String>,
 }
 
@@ -132,6 +133,13 @@ impl RenderHost for EditorHost<'_> {
 
     fn line_styles(&self, buffer: BufferId, lnum: u32) -> Vec<(u32, u32, Attr)> {
         self.styles
+            .get(&(buffer, lnum))
+            .cloned()
+            .unwrap_or_default()
+    }
+
+    fn line_virtual_text(&self, buffer: BufferId, lnum: u32) -> Vec<rvim_view::VirtualText> {
+        self.virtuals
             .get(&(buffer, lnum))
             .cloned()
             .unwrap_or_default()
@@ -293,36 +301,44 @@ impl Editor {
             };
             statuslines.insert(window, expanded);
         }
+        self.sync_text_props_current();
         let mut syntax = self.syntax.clone();
         let mut styles: StyleMap = HashMap::new();
-        if syntax.enabled() {
-            let buffer = self.current_buffer;
-            let count = self
+        let mut virtuals: HashMap<(BufferId, u32), Vec<rvim_view::VirtualText>> = HashMap::new();
+        let buffer = self.current_buffer;
+        let count = self
+            .buffers
+            .get(buffer)
+            .map_or(0, |buffer| buffer.text.line_count());
+        for lnum in 1..=count {
+            let Some(line) = self
                 .buffers
                 .get(buffer)
-                .map_or(0, |buffer| buffer.text.line_count());
-            for lnum in 1..=count {
-                let Some(line) = self
-                    .buffers
-                    .get(buffer)
-                    .and_then(|buffer| buffer.text.line(lnum))
-                else {
-                    continue;
-                };
-                let spans = syntax.highlight_line(line);
-                if !spans.is_empty() {
-                    let styles_line = spans
-                        .into_iter()
-                        .map(|span| {
-                            (
-                                span.start as u32,
-                                span.end as u32,
-                                self.highlights.get(&span.group),
-                            )
-                        })
-                        .collect();
-                    styles.insert((buffer, lnum), styles_line);
-                }
+                .and_then(|buffer| buffer.text.line(lnum))
+            else {
+                continue;
+            };
+            let mut styles_line: Vec<(u32, u32, Attr)> = Vec::new();
+            if syntax.enabled() {
+                styles_line.extend(syntax.highlight_line(line).into_iter().map(|span| {
+                    (
+                        span.start as u32,
+                        span.end as u32,
+                        self.highlights.get(&span.group),
+                    )
+                }));
+            }
+            // Text properties overlay syntax highlighting.
+            let props = self.prop_highlight_spans(buffer, lnum);
+            if !props.is_empty() {
+                apply_prop_spans(&mut styles_line, &props);
+            }
+            if !styles_line.is_empty() {
+                styles.insert((buffer, lnum), styles_line);
+            }
+            let virtual_text = self.prop_virtual_texts(buffer, lnum);
+            if !virtual_text.is_empty() {
+                virtuals.insert((buffer, lnum), virtual_text);
             }
         }
         let search = if self.options.get_bool("hlsearch") && self.search_highlight_active {
@@ -368,6 +384,7 @@ impl Editor {
             tabline_regions,
             search: search.as_ref(),
             styles: &styles,
+            virtuals: &virtuals,
             statuslines: &statuslines,
         };
         let mut frame = self.view.render(&host, chrome);
@@ -450,3 +467,63 @@ fn expand_statusline_expressions(editor: &mut Editor, template: &str, window: Wi
 
 #[allow(dead_code)]
 fn _unused(_: Size) {}
+
+/// Overlay text property highlight spans on top of syntax highlighting.
+///
+/// Properties are applied from the lowest to the highest priority so the
+/// highest priority wins. With "combine" the property attributes are merged
+/// with the highlight already covering the range.
+fn apply_prop_spans(styles: &mut Vec<(u32, u32, Attr)>, props: &[crate::textprop::PropSpan]) {
+    styles.sort_by_key(|(start, _, _)| *start);
+    for prop in props {
+        if prop.end <= prop.start {
+            continue;
+        }
+        let mut out: Vec<(u32, u32, Attr)> = Vec::with_capacity(styles.len() + 2);
+        let mut cursor = prop.start;
+        for (start, end, attr) in styles.drain(..) {
+            if end <= prop.start || start >= prop.end {
+                out.push((start, end, attr));
+                continue;
+            }
+            if start < prop.start {
+                out.push((start, prop.start, attr));
+            }
+            let overlap_start = start.max(prop.start);
+            let overlap_end = end.min(prop.end);
+            if overlap_start > cursor {
+                out.push((cursor, overlap_start, prop.attr));
+            }
+            let merged = if prop.combine {
+                merge_prop_attr(attr, prop.attr)
+            } else {
+                prop.attr
+            };
+            out.push((overlap_start, overlap_end, merged));
+            cursor = overlap_end.max(cursor);
+            if end > prop.end {
+                out.push((prop.end, end, attr));
+            }
+        }
+        if cursor < prop.end {
+            out.push((cursor, prop.end, prop.attr));
+        }
+        out.sort_by_key(|(start, _, _)| *start);
+        *styles = out;
+    }
+}
+
+fn merge_prop_attr(base: Attr, prop: Attr) -> Attr {
+    let mut result = base;
+    if prop.fg != rvim_ui_api::Color::Default {
+        result.fg = prop.fg;
+    }
+    if prop.bg != rvim_ui_api::Color::Default {
+        result.bg = prop.bg;
+    }
+    if prop.sp != rvim_ui_api::Color::Default {
+        result.sp = prop.sp;
+    }
+    result.flags |= prop.flags;
+    result
+}

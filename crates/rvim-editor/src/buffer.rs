@@ -5,6 +5,7 @@ use rvim_text::{TextBuffer, UndoManager};
 use rvim_types::{BufPos, BufferId};
 
 use crate::signs::PlacedSign;
+use crate::textprop::{PlacedProp, PropType};
 
 #[derive(Clone, Debug)]
 pub struct BufferEntry {
@@ -24,6 +25,14 @@ pub struct BufferEntry {
     pub sign_next_id: i64,
     /// Changedtick the sign line anchors were last reconciled with.
     pub signs_tick: u64,
+    /// Text property types defined for this buffer only.
+    pub prop_types: std::collections::HashMap<String, PropType>,
+    /// Text properties placed in this buffer.
+    pub text_props: Vec<PlacedProp>,
+    /// Next negative id assigned to virtual text properties.
+    pub prop_next_id: i64,
+    /// Changedtick the text property anchors were last reconciled with.
+    pub props_tick: u64,
 }
 
 impl BufferEntry {
@@ -42,6 +51,10 @@ impl BufferEntry {
             signs: Vec::new(),
             sign_next_id: 1,
             signs_tick: 0,
+            prop_types: std::collections::HashMap::new(),
+            text_props: Vec::new(),
+            prop_next_id: -1,
+            props_tick: 0,
         }
     }
 

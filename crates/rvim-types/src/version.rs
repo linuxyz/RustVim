@@ -30,12 +30,12 @@ pub fn has_feature(name: &str) -> bool {
         "autocmd" | "insert_expand" | "jumplist" | "modify_fname" => true,
         "filterpipe" | "quickfix" | "linebreak" | "wildmenu" | "digraphs" | "statusline_click"
         | "compl_func" => true,
-        "folding" | "signs" => true,
-        "spell" | "diff" | "session" | "crypt" | "vartabs" | "textprop" | "printer"
-        | "postscript" | "arabic" | "rightleft" | "xim" | "menu" | "toolbar" | "wayland"
-        | "tabpanel" | "termguicolors" | "mouseshape" | "browse" | "keymap" | "langmap"
-        | "find_id" | "autochdir" | "autoshelldir" | "emacs_tags" | "xterm_clipboard"
-        | "render_options" | "waks" | "con_dialog" | "balloon_eval" | "unsupported" => false,
+        "folding" | "signs" | "textprop" => true,
+        "spell" | "diff" | "session" | "crypt" | "vartabs" | "printer" | "postscript"
+        | "arabic" | "rightleft" | "xim" | "menu" | "toolbar" | "wayland" | "tabpanel"
+        | "termguicolors" | "mouseshape" | "browse" | "keymap" | "langmap" | "find_id"
+        | "autochdir" | "autoshelldir" | "emacs_tags" | "xterm_clipboard" | "render_options"
+        | "waks" | "con_dialog" | "balloon_eval" | "unsupported" => false,
         "cscope" | "netbeans_intg" => false,
         "python" | "python3" | "ruby" | "perl" | "tcl" | "lua" | "mzscheme" => false,
         "job" | "channel" | "timers" | "pty" => cfg!(unix),

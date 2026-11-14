@@ -35,6 +35,17 @@ const BUILTINS: &[&str] = &[
     "extend",
     "hlID",
     "indent",
+    "prop_type_add",
+    "prop_type_change",
+    "prop_type_delete",
+    "prop_type_get",
+    "prop_type_list",
+    "prop_add",
+    "prop_add_list",
+    "prop_clear",
+    "prop_find",
+    "prop_list",
+    "prop_remove",
     "sign_define",
     "sign_undefine",
     "sign_getdefined",
@@ -786,6 +797,12 @@ pub(crate) fn call_builtin(ctx: &mut Ctx, name: &str, args: &[Value]) -> Result<
             let group = string_arg(arg(args, 0))?.to_string_lossy().into_owned();
             Ok(Value::Number(ctx.host.highlight_id(&group)?))
         }
+        "prop_type_add" | "prop_type_change" | "prop_type_delete" | "prop_type_get"
+        | "prop_type_list" | "prop_add" | "prop_add_list" | "prop_clear" | "prop_find"
+        | "prop_list" | "prop_remove" => match ctx.host.call_function(name, args)? {
+            Some(value) => Ok(value),
+            None => Err(codes::e117(name)),
+        },
         "sign_define" | "sign_undefine" | "sign_getdefined" | "sign_place" | "sign_unplace"
         | "sign_getplaced" | "sign_jump" | "sign_placelist" | "sign_unplacelist" => {
             match ctx.host.call_function(name, args)? {

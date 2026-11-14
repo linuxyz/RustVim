@@ -2882,6 +2882,9 @@ impl VimHost for EditorVimHost<'_> {
                 self.editor.scheduler.stop_all();
                 Ok(Some(Value::Number(0)))
             }
+            "prop_type_add" | "prop_type_change" | "prop_type_delete" | "prop_type_get"
+            | "prop_type_list" | "prop_add" | "prop_add_list" | "prop_clear" | "prop_find"
+            | "prop_list" | "prop_remove" => Ok(Some(self.editor.prop_call_viml(name, args)?)),
             "sign_define" | "sign_undefine" | "sign_getdefined" | "sign_place" | "sign_unplace"
             | "sign_getplaced" | "sign_jump" | "sign_placelist" | "sign_unplacelist" => {
                 Ok(Some(self.editor.sign_call_viml(name, args)?))

@@ -25,6 +25,7 @@ pub mod search;
 pub mod signs;
 pub mod swap;
 pub mod tags;
+pub mod textprop;
 pub mod trace;
 pub mod usercmd;
 pub mod viml_host;

@@ -27,6 +27,14 @@ pub trait RenderHost {
     fn line_styles(&self, _buffer: BufferId, _lnum: u32) -> Vec<(u32, u32, Attr)> {
         Vec::new()
     }
+    /// Virtual text (buffer text properties) displayed on a line.
+    fn line_virtual_text(
+        &self,
+        _buffer: BufferId,
+        _lnum: u32,
+    ) -> Vec<crate::textprop::VirtualText> {
+        Vec::new()
+    }
     fn statusline_template(&self, _window: WindowId) -> Option<String> {
         None
     }
@@ -848,6 +856,7 @@ impl ViewState {
             let searches = host.search_matches(window.buffer, lnum);
             let search_attr = host.highlight("Search");
             let styles = host.line_styles(window.buffer, lnum);
+            let virtuals = host.line_virtual_text(window.buffer, lnum);
             let sign_cell = window.signs.get(lnum);
             let sign_line_hl = sign_cell
                 .map(|cell| cell.line_hl.clone())
@@ -1019,6 +1028,7 @@ impl ViewState {
                     &searches,
                     search_attr,
                     &styles,
+                    &virtuals,
                     *first_byte,
                     *last_byte,
                 );
@@ -1188,6 +1198,7 @@ impl ViewState {
         searches: &[(u32, u32)],
         search_attr: Attr,
         styles: &[(u32, u32, Attr)],
+        virtuals: &[crate::textprop::VirtualText],
         first_byte: usize,
         last_byte: usize,
     ) {
@@ -1206,7 +1217,33 @@ impl ViewState {
         let last_byte = last_byte.min(line.len());
         let mut out_col = start_col;
         let max_col = start_col + width;
+        let mut virtual_index = 0usize;
         while byte < last_byte && out_col < max_col {
+            // Text properties with "text": draw the virtual text before the
+            // buffer character at its column (wrapping geometry is not
+            // adjusted for virtual text).
+            while virtual_index < virtuals.len() && (virtuals[virtual_index].col as usize) <= byte {
+                let virtual_text = &virtuals[virtual_index];
+                virtual_index += 1;
+                if (virtual_text.col as usize) < first_byte {
+                    continue;
+                }
+                for ch in virtual_text.text.chars() {
+                    if out_col >= max_col {
+                        break;
+                    }
+                    let ch = if ch == '\t' || (ch as u32) < 0x20 {
+                        ' '
+                    } else {
+                        ch
+                    };
+                    let attr = merge_attr(virtual_text.attr, line_background);
+                    frame
+                        .base_mut()
+                        .put_str(row, out_col, &ch.to_string(), attr);
+                    out_col += char_width(ch).max(1) as u16;
+                }
+            }
             let (ch, len) = if line[byte] == b'\t' {
                 ('\t', 1)
             } else if let Some((ch, len)) = char_at(line, byte) {
@@ -1299,6 +1336,29 @@ impl ViewState {
             screen += width_cells as u32;
             byte += len;
         }
+        // Virtual text at (or after) the end of the rendered chunk.
+        while virtual_index < virtuals.len()
+            && (virtuals[virtual_index].col as usize) <= last_byte
+            && out_col < max_col
+        {
+            let virtual_text = &virtuals[virtual_index];
+            virtual_index += 1;
+            let attr = merge_attr(virtual_text.attr, line_background);
+            for ch in virtual_text.text.chars() {
+                if out_col >= max_col {
+                    break;
+                }
+                let ch = if ch == '\t' || (ch as u32) < 0x20 {
+                    ' '
+                } else {
+                    ch
+                };
+                frame
+                    .base_mut()
+                    .put_str(row, out_col, &ch.to_string(), attr);
+                out_col += char_width(ch).max(1) as u16;
+            }
+        }
     }
 
     fn cursor_screen_impl(
@@ -1366,6 +1426,7 @@ impl ViewState {
                 let skipcol = window.viewport.skipcol;
                 col = col.saturating_sub(skipcol.saturating_sub(chunk_start_screen as u32));
             }
+            col += virtual_width_before(host, window.buffer, window.cursor.lnum, window.cursor.col);
             if chunk_index > skipped {
                 col += u32::from(prefix_width);
             }
@@ -1381,7 +1442,8 @@ impl ViewState {
             return None;
         }
         let screen = host.screen_col(window.buffer, window.cursor, window.options.tabstop);
-        let col = screen.saturating_sub(leftcol);
+        let col = screen.saturating_sub(leftcol)
+            + virtual_width_before(host, window.buffer, window.cursor.lnum, window.cursor.col);
         if col >= u32::from(window.text_width()) && window.text_width() > 0 {
             return None;
         }
@@ -1993,6 +2055,15 @@ fn rows_before(window: &Window, host: &dyn RenderHost, topline: u32, target: u32
         lnum += 1;
     }
     row
+}
+
+/// Width in cells of virtual text placed before byte column \p col.
+fn virtual_width_before(host: &dyn RenderHost, buffer: BufferId, lnum: u32, col: u32) -> u32 {
+    host.line_virtual_text(buffer, lnum)
+        .iter()
+        .filter(|text| text.col < col)
+        .map(|text| rvim_types::unicode::display_width(text.text.as_bytes(), 0, 8) as u32)
+        .sum()
 }
 
 /// Combine 'cursorline' and sign "linehl" backgrounds.
