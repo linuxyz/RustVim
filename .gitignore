@@ -1,4 +1,5 @@
 /target
+/.fmtstamp
 **/*.rs.bk
 .DS_Store
 /runtime/
@@ -6,3 +7,4 @@
 *.swo
 /docs/inventory/__pycache__/
 /tools/__pycache__/
+fuzz/target/
