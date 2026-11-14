@@ -35,4 +35,4 @@ Add positive/<name>.vim, run 'oracle', then check-corpus and oracle --check.  If
 ## Known limitations
 The oracle is Vim 9.1 (patches 1-1752), older than the 9.2.1338 target; it already accepts nested :def, generics, classes, interfaces, enums and type aliases (only v:stacktrace in p27 is no-oracle).
 Vim 9 has no 'in' expression operator (use index()/has_key(); ':for x in list' is separate), asserted by n12; funcref variables need a capital first letter (E704), see p21.
-'diff' executes the base language corpus and compares byte for byte with expected/ using crates/rvim-viml/examples/vim9_run.rs (built on demand).  Cases needing Phase 3/4 (classes p17-p20/p26, import/export p22/p23) fail with the documented 'not implemented yet (planned Phase 3/4)' error and are reported SKIP, never PASS; p27 has no oracle.
+'diff' executes the whole corpus and compares byte for byte with expected/ using crates/rvim-viml/examples/vim9_run.rs (built on demand).  All 26 oracle-checked positives pass (p27 is no-oracle).  A future phase-specific case that hits the documented 'not implemented yet' error is reported SKIP, never PASS.

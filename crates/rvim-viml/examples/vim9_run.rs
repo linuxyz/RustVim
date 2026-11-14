@@ -12,14 +12,8 @@ fn main() -> ExitCode {
         eprintln!("usage: vim9_run FILE");
         return ExitCode::from(2);
     }
-    let source = match std::fs::read(&args[1]) {
-        Ok(source) => source,
-        Err(error) => {
-            eprintln!("error: cannot read {}: {error}", args[1]);
-            return ExitCode::from(2);
-        }
-    };
-    match rvim_viml::vim9::eval::run_script(&source) {
+    let path = std::path::Path::new(&args[1]);
+    match rvim_viml::vim9::eval::run_script_file(path) {
         Ok(output) => {
             for message in output.messages {
                 println!("{message}");

@@ -317,7 +317,7 @@ impl<'a> Parser<'a> {
                 let continuation = match &command {
                     Stmt::Command { text, .. } => {
                         let trimmed = trim_start_bytes(text.as_bytes());
-                        matches!(trimmed.first(), Some(b'\\') | Some(b'|'))
+                        is_command_continuation(trimmed)
                     }
                     _ => false,
                 };
@@ -2191,6 +2191,26 @@ fn trim_bytes(bytes: &[u8]) -> VimString {
         end -= 1;
     }
     VimString::from_bytes(bytes[start..end].to_vec())
+}
+
+/// A raw command line continues the previous command when it starts with a
+/// backslash/bar (Ex syntax) or with an expression operator (Vim9 allows a
+/// line break before a binary operator, including inside :echo arguments).
+fn is_command_continuation(text: &[u8]) -> bool {
+    if text.starts_with(b"\\") || text.starts_with(b"|") {
+        return true;
+    }
+    if text.starts_with(b"..")
+        || text.starts_with(b"->")
+        || text.starts_with(b"&&")
+        || text.starts_with(b"||")
+    {
+        return true;
+    }
+    matches!(
+        text.first(),
+        Some(b'+' | b'-' | b'*' | b'/' | b'%' | b'.' | b'?' | b':')
+    )
 }
 
 fn trim_start_bytes(bytes: &[u8]) -> &[u8] {

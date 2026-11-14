@@ -6,10 +6,10 @@
 //! tuple to a legacy value (for a builtin that does not understand tuples)
 //! degrades it to a list.
 
-use rvim_types::VimString;
+use rvim_types::{ScriptId, VimString};
 
 use crate::error::{Result, VimError};
-use crate::value::{SpecialValue, Value};
+use crate::value::{FuncrefData, FuncrefKind, SpecialValue, Value};
 
 /// A Vim9 value: either a legacy value or a tuple.
 #[derive(Clone, Debug)]
@@ -20,6 +20,10 @@ pub enum Value9 {
 
 /// Prefix of the synthetic funcref names that point at Vim9 callables.
 pub const FUNCREF_PREFIX: &[u8] = b"\x01vim9:";
+pub const CLASS_PREFIX: &[u8] = b"\x01vim9c:";
+pub const OBJECT_PREFIX: &[u8] = b"\x01vim9o:";
+pub const ENUM_PREFIX: &[u8] = b"\x01vim9e:";
+pub const ENUM_VALUE_PREFIX: &[u8] = b"\x01vim9v:";
 
 impl Value9 {
     pub fn number(value: i64) -> Self {
@@ -193,20 +197,47 @@ fn tuple_string(items: &[Value9], quoted: bool) -> String {
     }
 }
 
-/// The synthetic funcref name for callable number "id".
-pub fn funcref_name(id: usize) -> VimString {
-    let mut bytes = FUNCREF_PREFIX.to_vec();
+/// The synthetic funcref name for an object with a given prefix and id.
+pub fn prefixed_funcref_name(prefix: &[u8], id: usize) -> VimString {
+    let mut bytes = prefix.to_vec();
     bytes.extend_from_slice(id.to_string().as_bytes());
     VimString::from_bytes(bytes)
 }
 
-/// The callable number stored in a funcref value, when it is a Vim9 callable.
-pub fn funcref_id(value: &Value) -> Option<usize> {
+/// The synthetic funcref name for callable number "id".
+pub fn funcref_name(id: usize) -> VimString {
+    prefixed_funcref_name(FUNCREF_PREFIX, id)
+}
+
+/// The id stored in a synthetic funcref value with "prefix".
+pub fn prefixed_funcref_id(value: &Value, prefix: &[u8]) -> Option<usize> {
     let Value::Funcref(data) = value else {
         return None;
     };
     let data = data.borrow();
-    let bytes = data.name.as_bytes();
-    let rest = bytes.strip_prefix(FUNCREF_PREFIX)?;
+    let rest = data.name.as_bytes().strip_prefix(prefix)?;
     std::str::from_utf8(rest).ok()?.parse().ok()
+}
+
+/// The callable number stored in a funcref value, when it is a Vim9 callable.
+pub fn funcref_id(value: &Value) -> Option<usize> {
+    prefixed_funcref_id(value, FUNCREF_PREFIX)
+}
+
+/// Build a Vim9 value that stores a registry id under "prefix".
+pub fn prefixed_marker(prefix: &[u8], id: usize) -> Value9 {
+    let data = FuncrefData::new(
+        prefixed_funcref_name(prefix, id),
+        FuncrefKind::User,
+        ScriptId::default(),
+    );
+    Value9::Val(Value::funcref(data))
+}
+
+/// Read a registry id stored under "prefix" from a Vim9 value.
+pub fn marker_id(value: &Value9, prefix: &[u8]) -> Option<usize> {
+    match value {
+        Value9::Val(value) => prefixed_funcref_id(value, prefix),
+        Value9::Tuple(_) => None,
+    }
 }

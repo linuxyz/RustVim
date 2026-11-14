@@ -111,7 +111,7 @@ tests and debugging); they sum to ~58-93M for target B.
   error); Vim-valid files in the corpus also parse; unit tests cover each
   construct class; fmt/clippy/test clean; matrix unchanged (feature still 0).
 
-### Phase 2 - checks and evaluator (25-35M) [in progress]
+### Phase 2 - checks and evaluator (25-35M) [complete]
 - Variable scopes and immutability (final/const, script-local locking),
   function calls (Vim9 def, legacy function, builtin, funcref/partial),
   closures incl. nested def capture, list/dict/tuple values, string
@@ -124,12 +124,13 @@ tests and debugging); they sum to ~58-93M for target B.
 - Gate: corpus executes with outputs equal to the Vim oracle (diff mode);
   Vim's own test_vim9_*.vim subset has a documented pass rate and no panics;
   legacy suite green; matrix unchanged.
-  Phase 2 scope note: the base language corpus (p01-p16, p21, p24, p25) is the
-  gate for this phase.  The class/enum/import cases (p17-p20, p22, p23, p26)
-  need Phase 3/4 and are reported SKIP by the diff harness until then; they
-  must never be counted as PASS early.
+  Phase gate met: all 26 oracle-checked corpus cases pass byte for byte
+  (p27 is no-oracle).  Classes, enums and imports were brought into the
+  evaluator early to complete the corpus; only the editor-side script-loader
+  integration is left for Phase 3.  Vim's own test_vim9_*.vim subset and the
+  strict static type checker remain Phase 5 hardening.
 
-### Phase 3 - script loader, import/export, autoload (8-12M)
+### Phase 3 - script loader, import/export, autoload (8-12M) [in progress]
 - "vim9script" header handling in the script loader, script namespaces,
   export tables, import path resolution (relative, runtimepath, the 9.2
   "import/" directory, "import autoload" deferral), script-local lifetime,
@@ -137,14 +138,20 @@ tests and debugging); they sum to ~58-93M for target B.
   removal.
 - Gate: the runtime Vim9 scripts load and imports resolve; Tier A/B/C run with
   the feature enabled locally; no regression.
+- Evaluator-side import/export (script frames, relative and runtimepath import
+  resolution, export tables, cyclic-import guard) is already implemented and
+  validated by the corpus; the remaining work is wiring Vim9 sourcing and Ex
+  command dispatch into the editor.
 
-### Phase 4 - classes, interfaces, enums (8-14M)
+### Phase 4 - classes, interfaces, enums (8-14M) [complete at evaluator level]
 - Member declarations/access (public/private/static/abstract), constructors,
   this/super, methods, objects, nested defs capturing this, class variables,
   abstract classes, interfaces (declaration and conformance as far as the
   runtime needs), enums, type aliases.
 - Gate: runtime/syntax/2html.vim (ProgressBar class) executes identically to
-  the oracle; class corpus passes.
+  the oracle; class corpus passes.  The corpus class/enum/interface cases
+  (p17-p20, p23, p26) now pass byte for byte; super member access is not
+  needed by the corpus or runtime files and remains a documented gap.
 
 ### Phase 5 - diagnostics, Vim test subset, hardening (8-15M)
 - Remaining type checks and Vim-like diagnostics needed by the test corpus;
@@ -246,3 +253,22 @@ tests and debugging); they sum to ~58-93M for target B.
     and const locking.
   - Still deliberately permissive: no Vim9 static type checker yet; that moves
     to Phase 5 hardening (documented approximation).
+
+- 2026-11-15: Phase 2 complete and evaluator-side Phase 3/4 landed.
+  - eval.rs now has script frames with export tables, relative/runtimepath
+    import resolution and a cyclic-import guard; imported functions/classes/
+    enums/constants resolve through namespace dictionaries.
+  - Runtime class model: instance/static variables, constructors (new),
+    methods with this, inheritance, abstract classes, virtual dispatch,
+    static methods, nested defs capturing this, and typed-but-uninitialized
+    variable defaults.
+  - Runtime enum model: members with constructor arguments and fields,
+    .name/.ordinal, body variables and new(this.member, ...) mapping.
+  - Parser: raw Ex command continuations starting with .. / -> / operators
+    are merged (needed by echomsg expressions spanning lines).
+  - Differential gate: 26 passed, 0 failed, 1 skipped (p27 is no-oracle).
+  - New unit tests: classes/static members, abstract classes + enums,
+    relative imports (temp script pair).  Total workspace tests: 629.
+  - Remaining for Phase 3: editor-side sourcing of vim9script files, Ex
+    command dispatch from Vim9 (so syntax files can run), vim9-mix preamble
+    execution, and then the has(vim9script) flip in Phase 5.

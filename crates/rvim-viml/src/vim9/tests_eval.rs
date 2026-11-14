@@ -281,13 +281,104 @@ C = 2
 }
 
 #[test]
-fn later_phase_features_fail_clearly() {
-    let error = run_error(
-        "vim9script
-class A
-  var x: number
+fn classes_static_members_and_methods() {
+    assert_eq!(
+        messages(
+            "vim9script
+class Counter
+  public var count: number = 0
+  var step: number = 1
+  static var instances: number = 0
+  def new(step: number = 1)
+    this.step = step
+    Counter.instances += 1
+  enddef
+  def Incr()
+    this.count += this.step
+  enddef
 endclass
-",
+var counter = Counter.new(2)
+counter.Incr()
+counter.Incr()
+echomsg 'count=' .. counter.count .. ' instances=' .. Counter.instances
+"
+        ),
+        vec!["count=4 instances=1".to_string()]
     );
-    assert!(error.contains("not implemented"), "{error}");
+}
+
+#[test]
+fn abstract_classes_and_enums() {
+    assert_eq!(
+        messages(
+            "vim9script
+abstract class Shape
+  public var color: string = 'black'
+  abstract def Area(): number
+  def Describe(): string
+    return this.color .. ':' .. this.Area()
+  enddef
+endclass
+class Square extends Shape
+  public var side: number
+  def new(side: number)
+    this.side = side
+  enddef
+  def Area(): number
+    return this.side * this.side
+  enddef
+endclass
+enum Planet
+  Earth(1, false),
+  Mars(2, false)
+  var moons: number
+  var rings: bool
+  def new(this.moons, this.rings)
+  enddef
+endenum
+echomsg Square.new(3).Describe()
+echomsg 'earth=' .. Planet.Earth.moons .. ',' .. Planet.Earth.rings
+echomsg 'name=' .. Planet.Mars.name .. ' ordinal=' .. Planet.Mars.ordinal
+"
+        ),
+        vec![
+            "black:9".to_string(),
+            "earth=1,false".to_string(),
+            "name=Mars ordinal=1".to_string(),
+        ]
+    );
+}
+
+#[test]
+fn imports_resolve_relative_to_the_script() {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+    let id = COUNTER.fetch_add(1, Ordering::Relaxed);
+    let dir = std::env::temp_dir().join(format!("rvim-vim9-import-{}-{id}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join("helper.vim"),
+        "vim9script
+export def Greet(name: string): string
+  return 'hi ' .. name
+enddef
+export const ANSWER = 42
+",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.join("main.vim"),
+        "vim9script
+import './helper.vim' as helper
+echomsg helper.Greet('vim')
+echomsg 'answer=' .. helper.ANSWER
+",
+    )
+    .unwrap();
+    let output = super::eval::run_script_file(&dir.join("main.vim")).unwrap();
+    let _ = std::fs::remove_dir_all(&dir);
+    assert_eq!(
+        output.messages,
+        vec!["hi vim".to_string(), "answer=42".to_string()]
+    );
 }

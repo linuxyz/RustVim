@@ -11,7 +11,8 @@
 //! imports are Phase 3/4 and currently report a clear not-implemented error.
 
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 use rvim_types::{ScriptId, VimString};
@@ -23,11 +24,14 @@ use crate::value::{FuncrefData, FuncrefKind, Value, VimDict};
 
 use super::ast::*;
 use super::eval_helpers::{
-    assign_to_binary, normalize_index, not_implemented, same_value, slice_bounds, special_string,
-    split_command, strtrans_text, trim_text,
+    assign_to_binary, normalize_index, same_value, slice_bounds, special_string, split_command,
+    strtrans_text, trim_text,
 };
 use super::parser;
-use super::value9::{funcref_id, funcref_name, Value9};
+use super::value9::{
+    funcref_id, funcref_name, marker_id, prefixed_marker, Value9, CLASS_PREFIX, ENUM_PREFIX,
+    ENUM_VALUE_PREFIX, OBJECT_PREFIX,
+};
 
 /// Result of running a complete Vim9 script.
 pub struct RunOutput {
@@ -66,7 +70,18 @@ struct Slot {
 struct Env {
     vars: HashMap<String, Slot>,
     functions: HashMap<String, Rc<Callable>>,
+    /// Class and enum names declared in this scope.
+    types: HashMap<String, TypeBinding>,
+    /// Interface names (compile-time only; runtime dispatch is by object).
+    interfaces: HashSet<String>,
     parent: Option<Rc<RefCell<Env>>>,
+}
+
+/// A class or enum visible by name in a script scope.
+#[derive(Clone)]
+enum TypeBinding {
+    Class(Rc<ClassDef>),
+    Enum(Rc<EnumDef>),
 }
 
 /// A callable: a compiled def or a lambda with a captured environment.
@@ -76,6 +91,16 @@ enum Callable {
         env: Rc<RefCell<Env>>,
     },
     Lambda(Rc<LambdaClosure>),
+    /// A method bound to an object (instance) or class (static).
+    Bound {
+        def: Rc<DefDecl>,
+        env: Rc<RefCell<Env>>,
+        this_value: Option<Value9>,
+    },
+    /// A class constructor.
+    Constructor {
+        class: Rc<ClassDef>,
+    },
 }
 
 struct LambdaClosure {
@@ -84,14 +109,70 @@ struct LambdaClosure {
     env: Rc<RefCell<Env>>,
 }
 
+/// One script execution frame: its script-local scope and export table.
+struct ScriptFrame {
+    env: Rc<RefCell<Env>>,
+    exports: VimDict,
+    /// Directory used to resolve relative imports.
+    dir: Option<PathBuf>,
+}
+
+/// One variable member of a class or enum.
+#[derive(Clone)]
+struct VariableDef {
+    name: String,
+    ty: Option<TypeExpr>,
+    init: Option<Expr>,
+}
+
+/// A Vim9 class (runtime side).
+struct ClassDef {
+    name: String,
+    is_abstract: bool,
+    base: Option<Rc<ClassDef>>,
+    instance_vars: Vec<VariableDef>,
+    static_vars: RefCell<HashMap<String, Value>>,
+    methods: HashMap<String, Rc<DefDecl>>,
+    static_methods: HashMap<String, Rc<DefDecl>>,
+    /// Scope the class was declared in (methods resolve script names here).
+    env: Rc<RefCell<Env>>,
+    id: usize,
+}
+
+/// A class instance.
+struct Object {
+    class: Rc<ClassDef>,
+    fields: RefCell<HashMap<String, Value>>,
+}
+
+/// A Vim9 enum.
+struct EnumDef {
+    name: String,
+    members: HashMap<String, usize>,
+    id: usize,
+}
+
+/// One enum member value (also used for enum constructors with fields).
+struct EnumValue {
+    name: String,
+    ordinal: i64,
+    fields: RefCell<HashMap<String, Value>>,
+}
+
 struct Interpreter {
     /// Legacy runtime, used for v: variables and builtin delegation.
     runtime: VimRuntime,
     /// In-memory host: options, buffer lines and registers.
     host: BasicHost,
     messages: Vec<String>,
-    script_env: Rc<RefCell<Env>>,
+    frames: Vec<ScriptFrame>,
     callables: Vec<Rc<Callable>>,
+    classes: Vec<Rc<ClassDef>>,
+    objects: Vec<Rc<RefCell<Object>>>,
+    enums: Vec<Rc<EnumDef>>,
+    enum_values: Vec<Rc<EnumValue>>,
+    /// Import stack, to skip cyclic imports like Vim does.
+    loading: Vec<PathBuf>,
     cursor_col: usize,
 }
 
@@ -123,14 +204,57 @@ impl Interpreter {
             runtime,
             host,
             messages: Vec::new(),
-            script_env: Rc::new(RefCell::new(Env::default())),
+            frames: vec![ScriptFrame {
+                env: Rc::new(RefCell::new(Env::default())),
+                exports: VimDict::new(),
+                dir: None,
+            }],
             callables: Vec::new(),
+            classes: Vec::new(),
+            objects: Vec::new(),
+            enums: Vec::new(),
+            enum_values: Vec::new(),
+            loading: Vec::new(),
             cursor_col: 0,
         }
     }
 
+    fn current_env(&self) -> Rc<RefCell<Env>> {
+        self.frames
+            .last()
+            .expect("at least one script frame")
+            .env
+            .clone()
+    }
+
+    fn current_dir(&self) -> Option<PathBuf> {
+        self.frames.last().and_then(|frame| frame.dir.clone())
+    }
+
+    fn env_type(env: &Rc<RefCell<Env>>, name: &str) -> Option<TypeBinding> {
+        let mut current = Some(env.clone());
+        while let Some(scope) = current {
+            let borrowed = scope.borrow();
+            if let Some(binding) = borrowed.types.get(name) {
+                return Some(binding.clone());
+            }
+            current = borrowed.parent.clone();
+        }
+        None
+    }
+
     fn execute_script(&mut self, script: &Script) -> Result<()> {
-        let env = self.script_env.clone();
+        self.execute_script_at(script, None)
+    }
+
+    fn execute_script_at(&mut self, script: &Script, dir: Option<PathBuf>) -> Result<()> {
+        let env = self.current_env();
+        if let Some(frame) = self.frames.last_mut() {
+            frame.exports = VimDict::new();
+            if dir.is_some() {
+                frame.dir = dir;
+            }
+        }
         let flow = self.exec_items(&script.items, &env)?;
         match flow {
             Flow::Normal | Flow::Finish | Flow::Return(_) => Ok(()),
@@ -148,6 +272,8 @@ impl Interpreter {
         Rc::new(RefCell::new(Env {
             vars: HashMap::new(),
             functions: HashMap::new(),
+            types: HashMap::new(),
+            interfaces: HashSet::new(),
             parent: Some(parent.clone()),
         }))
     }
@@ -264,6 +390,23 @@ impl Interpreter {
                     _ => Value9::none(),
                 })
             }
+            Callable::Bound {
+                def,
+                env,
+                this_value,
+            } => {
+                let frame = Self::frame(env);
+                if let Some(this_value) = this_value {
+                    Self::env_define(&frame, "this", this_value.clone(), false);
+                }
+                self.bind_params(&def.params, args, &frame, &def.name.to_string_lossy())?;
+                let flow = self.exec_items(&def.body, &frame)?;
+                Ok(match flow {
+                    Flow::Return(value) => value,
+                    _ => Value9::none(),
+                })
+            }
+            Callable::Constructor { class } => self.construct_object(class, args),
             Callable::Lambda(closure) => {
                 let frame = Self::frame(&closure.env);
                 self.bind_params(&closure.params, args, &frame, "<lambda>")?;
@@ -344,7 +487,7 @@ impl Interpreter {
             Stmt::Var(declaration) => {
                 let value = match &declaration.init {
                     Some(expression) => self.eval_expr(expression, env)?,
-                    None => Value9::null(),
+                    None => self.var_default(declaration),
                 };
                 let locked = declaration.kind != VarKind::Var;
                 self.bind_pattern(&declaration.pattern, value, env, true, locked)?;
@@ -449,11 +592,30 @@ impl Interpreter {
                 self.eval_expr(expr, env)?;
                 Ok(Flow::Normal)
             }
-            Stmt::Import(_) => Err(not_implemented("import")),
-            Stmt::Export(export) => self.exec_stmt(&export.item, env),
-            Stmt::Class(_) => Err(not_implemented("class")),
-            Stmt::Interface(_) => Err(not_implemented("interface")),
-            Stmt::Enum(_) => Err(not_implemented("enum")),
+            Stmt::Import(import) => {
+                self.exec_import(import, env)?;
+                Ok(Flow::Normal)
+            }
+            Stmt::Export(export) => {
+                let flow = self.exec_stmt(&export.item, env)?;
+                if matches!(flow, Flow::Normal) {
+                    self.register_export(&export.item, env)?;
+                }
+                Ok(flow)
+            }
+            Stmt::Class(class) => {
+                self.define_class(class, env)?;
+                Ok(Flow::Normal)
+            }
+            Stmt::Interface(interface) => {
+                let name = interface.name.to_string_lossy().into_owned();
+                env.borrow_mut().interfaces.insert(name);
+                Ok(Flow::Normal)
+            }
+            Stmt::Enum(value) => {
+                self.define_enum(value, env)?;
+                Ok(Flow::Normal)
+            }
             Stmt::TypeAlias(_) => Ok(Flow::Normal),
             Stmt::Command { text, line } => {
                 self.exec_command(text, *line, env)?;
@@ -590,7 +752,8 @@ impl Interpreter {
             crate::lexer::Scope::Script
             | crate::lexer::Scope::Local
             | crate::lexer::Scope::Argument => {
-                Self::env_assign(&self.script_env.clone(), name, value)
+                let env = self.current_env();
+                Self::env_assign(&env, name, value)
             }
         }
     }
@@ -784,25 +947,7 @@ impl Interpreter {
             }
             Expr::Member { base, key } => {
                 let base = self.eval_expr(base, env)?;
-                match &base {
-                    Value9::Val(Value::Dict(dict)) => {
-                        let borrowed = dict.borrow();
-                        match borrowed.get(key) {
-                            Some(value) => Ok(Value9::Val(value.clone())),
-                            None => Err(VimError::new(
-                                716,
-                                format!(
-                                    "E716: Key not present in Dictionary: {}",
-                                    key.to_string_lossy()
-                                ),
-                            )),
-                        }
-                    }
-                    _ => Err(VimError::new(
-                        1030,
-                        "E1030: Using an unsupported value as a Dictionary",
-                    )),
-                }
+                self.member_get(&base, key)
             }
             Expr::Lambda(lambda) => {
                 let callable = Rc::new(Callable::Lambda(Rc::new(LambdaClosure {
@@ -830,6 +975,9 @@ impl Interpreter {
                 if let Some(callable) = Self::env_function(env, &text) {
                     return Ok(self.make_funcref(callable));
                 }
+                if let Some(binding) = Self::env_type(env, &text) {
+                    return Ok(self.type_value(&binding));
+                }
                 Err(VimError::new(
                     121,
                     format!("E121: Undefined variable: {text}"),
@@ -853,7 +1001,7 @@ impl Interpreter {
                 .map(Value9::Val)
                 .ok_or_else(|| VimError::new(121, format!("E121: Undefined variable: v:{text}"))),
             Some(crate::lexer::Scope::Script) => {
-                let script_env = self.script_env.clone();
+                let script_env = self.current_env();
                 Self::env_lookup(&script_env, &text).ok_or_else(|| {
                     VimError::new(121, format!("E121: Undefined variable: s:{text}"))
                 })
@@ -1206,16 +1354,7 @@ impl Interpreter {
             }
             Expr::Member { base, key } => {
                 let base = self.eval_expr(base, env)?;
-                match &base {
-                    Value9::Val(Value::Dict(dict)) => {
-                        dict.borrow_mut().set(key.clone(), value.legacy());
-                        Ok(())
-                    }
-                    _ => Err(VimError::new(
-                        1030,
-                        "E1030: Using an unsupported value as a Dictionary",
-                    )),
-                }
+                self.member_set(&base, key, value)
             }
             Expr::Option { scope, name } => {
                 let scope = match scope {
@@ -1638,4 +1777,553 @@ impl Interpreter {
             _ => {}
         }
     }
+
+    // ---------------------------------------------------------------
+    // Classes, enums, imports (Phase 3/4)
+    // ---------------------------------------------------------------
+
+    fn var_default(&self, declaration: &VarDecl) -> Value9 {
+        let ty = declaration.ty.as_ref().or(match &declaration.pattern {
+            VarPattern::Name(name) => name.ty.as_ref(),
+            _ => None,
+        });
+        default_for_type(ty)
+    }
+
+    fn type_value(&mut self, binding: &TypeBinding) -> Value9 {
+        match binding {
+            TypeBinding::Class(class) => prefixed_marker(CLASS_PREFIX, class.id),
+            TypeBinding::Enum(value) => prefixed_marker(ENUM_PREFIX, value.id),
+        }
+    }
+
+    fn find_class_method(class: &Rc<ClassDef>, name: &str) -> Option<Rc<DefDecl>> {
+        let mut current = Some(class.clone());
+        while let Some(class) = current {
+            if let Some(def) = class.methods.get(name) {
+                return Some(def.clone());
+            }
+            current = class.base.clone();
+        }
+        None
+    }
+
+    fn default_for_variable(
+        &mut self,
+        variable: &VariableDef,
+        env: &Rc<RefCell<Env>>,
+    ) -> Result<Value9> {
+        match &variable.init {
+            Some(expression) => self.eval_expr(expression, env),
+            None => Ok(default_for_type(variable.ty.as_ref())),
+        }
+    }
+
+    fn define_class(&mut self, declaration: &ClassDecl, env: &Rc<RefCell<Env>>) -> Result<()> {
+        let base = match &declaration.extends {
+            Some(TypeExpr::Named(name)) => {
+                let name = name.to_string_lossy().into_owned();
+                match Self::env_type(env, &name) {
+                    Some(TypeBinding::Class(class)) => Some(class),
+                    _ => {
+                        return Err(VimError::new(
+                            1075,
+                            format!("E1075: Class not found: {name}"),
+                        ))
+                    }
+                }
+            }
+            _ => None,
+        };
+        let mut instance_vars = Vec::new();
+        let mut static_vars = HashMap::new();
+        let mut methods = HashMap::new();
+        let mut static_methods = HashMap::new();
+        for member in &declaration.members {
+            match member {
+                ClassMember::Var {
+                    is_static,
+                    pattern,
+                    ty,
+                    init,
+                    ..
+                } => {
+                    let name = pattern.name.to_string_lossy().into_owned();
+                    let variable = VariableDef {
+                        name: name.clone(),
+                        ty: ty.clone().or_else(|| pattern.ty.clone()),
+                        init: init.clone(),
+                    };
+                    if *is_static {
+                        let value = match &variable.init {
+                            Some(expression) => self.eval_expr(expression, env)?,
+                            None => default_for_type(variable.ty.as_ref()),
+                        };
+                        static_vars.insert(name, value.legacy());
+                    } else {
+                        instance_vars.push(variable);
+                    }
+                }
+                ClassMember::Def { def, .. } => {
+                    let name = def.name.to_string_lossy().into_owned();
+                    let definition = Rc::new(def.clone());
+                    if def.is_static {
+                        static_methods.insert(name, definition);
+                    } else {
+                        methods.insert(name, definition);
+                    }
+                }
+            }
+        }
+        let id = self.classes.len();
+        let class = Rc::new(ClassDef {
+            name: declaration.name.to_string_lossy().into_owned(),
+            is_abstract: declaration.is_abstract,
+            base,
+            instance_vars,
+            static_vars: RefCell::new(static_vars),
+            methods,
+            static_methods,
+            env: env.clone(),
+            id,
+        });
+        self.classes.push(class.clone());
+        env.borrow_mut()
+            .types
+            .insert(class.name.clone(), TypeBinding::Class(class));
+        Ok(())
+    }
+
+    fn define_enum(&mut self, declaration: &EnumDecl, env: &Rc<RefCell<Env>>) -> Result<()> {
+        let mut fields: Vec<VariableDef> = Vec::new();
+        let mut constructor_params: Vec<String> = Vec::new();
+        for statement in &declaration.body {
+            match statement {
+                Stmt::Var(declaration) => {
+                    if let VarPattern::Name(name) = &declaration.pattern {
+                        fields.push(VariableDef {
+                            name: name.name.to_string_lossy().into_owned(),
+                            ty: declaration.ty.clone().or_else(|| name.ty.clone()),
+                            init: declaration.init.clone(),
+                        });
+                    }
+                }
+                Stmt::Def(def) if def.name.as_bytes() == b"new" => {
+                    for param in &def.params {
+                        let name = param.name.to_string_lossy().into_owned();
+                        let field = name
+                            .strip_prefix("this.")
+                            .map(|name| name.to_string())
+                            .unwrap_or(name);
+                        constructor_params.push(field);
+                    }
+                }
+                _ => {}
+            }
+        }
+        let id = self.enums.len();
+        let mut members = HashMap::new();
+        for (index, member) in declaration.members.iter().enumerate() {
+            let mut values: HashMap<String, Value> = HashMap::new();
+            for variable in &fields {
+                let value = self.default_for_variable(variable, env)?;
+                values.insert(variable.name.clone(), value.legacy());
+            }
+            for (position, field) in constructor_params.iter().enumerate() {
+                if let Some(argument) = member.args.get(position) {
+                    let value = self.eval_expr(argument, env)?;
+                    values.insert(field.clone(), value.legacy());
+                }
+            }
+            let value_id = self.enum_values.len();
+            self.enum_values.push(Rc::new(EnumValue {
+                name: member.name.to_string_lossy().into_owned(),
+                ordinal: index as i64,
+                fields: RefCell::new(values),
+            }));
+            members.insert(member.name.to_string_lossy().into_owned(), value_id);
+        }
+        let name = declaration.name.to_string_lossy().into_owned();
+        let enum_def = Rc::new(EnumDef {
+            name: name.clone(),
+            members,
+            id,
+        });
+        self.enums.push(enum_def.clone());
+        env.borrow_mut()
+            .types
+            .insert(name, TypeBinding::Enum(enum_def));
+        Ok(())
+    }
+
+    fn construct_object(&mut self, class: &Rc<ClassDef>, args: Vec<Value9>) -> Result<Value9> {
+        if class.is_abstract {
+            return Err(VimError::new(
+                1325,
+                format!("E1325: Cannot instantiate abstract class: {}", class.name),
+            ));
+        }
+        let object_id = self.objects.len();
+        let object = Rc::new(RefCell::new(Object {
+            class: class.clone(),
+            fields: RefCell::new(HashMap::new()),
+        }));
+        self.objects.push(object.clone());
+        let marker = prefixed_marker(OBJECT_PREFIX, object_id);
+        let mut chain = Vec::new();
+        let mut current = Some(class.clone());
+        while let Some(class) = current {
+            chain.push(class.clone());
+            current = class.base.clone();
+        }
+        chain.reverse();
+        for class in chain {
+            for variable in &class.instance_vars {
+                let frame = Self::frame(&class.env);
+                Self::env_define(&frame, "this", marker.clone(), false);
+                let value = self.default_for_variable(variable, &frame)?;
+                let borrowed = object.borrow();
+                borrowed
+                    .fields
+                    .borrow_mut()
+                    .insert(variable.name.clone(), value.legacy());
+            }
+        }
+        if let Some(definition) = Self::find_class_method(class, "new") {
+            let frame = Self::frame(&class.env);
+            Self::env_define(&frame, "this", marker.clone(), false);
+            self.bind_params(&definition.params, args, &frame, "new")?;
+            self.exec_items(&definition.body, &frame)?;
+        } else if !args.is_empty() {
+            return Err(VimError::new(
+                118,
+                format!("E118: Too many arguments for function: {}", class.name),
+            ));
+        }
+        Ok(marker)
+    }
+
+    fn member_get(&mut self, base: &Value9, key: &VimString) -> Result<Value9> {
+        let text = key.to_string_lossy().into_owned();
+        if let Value9::Val(Value::Dict(dict)) = base {
+            let borrowed = dict.borrow();
+            return match borrowed.get(key) {
+                Some(value) => Ok(Value9::Val(value.clone())),
+                None => Err(VimError::new(
+                    716,
+                    format!("E716: Key not present in Dictionary: {text}"),
+                )),
+            };
+        }
+        if let Some(id) = marker_id(base, OBJECT_PREFIX) {
+            let object = self
+                .objects
+                .get(id)
+                .cloned()
+                .ok_or_else(|| VimError::new(716, "E716: Invalid object"))?;
+            let field = {
+                let borrowed = object.borrow();
+                let fields = borrowed.fields.borrow();
+                fields.get(&text).cloned()
+            };
+            if let Some(value) = field {
+                return Ok(Value9::Val(value));
+            }
+            let class = object.borrow().class.clone();
+            if let Some(definition) = Self::find_class_method(&class, &text) {
+                let callable = Rc::new(Callable::Bound {
+                    def: definition,
+                    env: class.env.clone(),
+                    this_value: Some(base.clone()),
+                });
+                return Ok(self.make_funcref(callable));
+            }
+            return Err(VimError::new(
+                716,
+                format!("E716: Key not present in Dictionary: {text}"),
+            ));
+        }
+        if let Some(id) = marker_id(base, CLASS_PREFIX) {
+            let class = self
+                .classes
+                .get(id)
+                .cloned()
+                .ok_or_else(|| VimError::new(716, "E716: Invalid class"))?;
+            if text == "new" {
+                let callable = Rc::new(Callable::Constructor { class });
+                return Ok(self.make_funcref(callable));
+            }
+            if let Some(definition) = class.static_methods.get(&text).cloned() {
+                let callable = Rc::new(Callable::Bound {
+                    def: definition,
+                    env: class.env.clone(),
+                    this_value: None,
+                });
+                return Ok(self.make_funcref(callable));
+            }
+            let value = class.static_vars.borrow().get(&text).cloned();
+            if let Some(value) = value {
+                return Ok(Value9::Val(value));
+            }
+            return Err(VimError::new(
+                716,
+                format!("E716: Key not present in Dictionary: {text}"),
+            ));
+        }
+        if let Some(id) = marker_id(base, ENUM_PREFIX) {
+            let enum_def = self
+                .enums
+                .get(id)
+                .cloned()
+                .ok_or_else(|| VimError::new(716, "E716: Invalid enum"))?;
+            if let Some(member) = enum_def.members.get(&text) {
+                return Ok(prefixed_marker(ENUM_VALUE_PREFIX, *member));
+            }
+            return Err(VimError::new(
+                716,
+                format!("E716: Item not found in enum {}: {text}", enum_def.name),
+            ));
+        }
+        if let Some(id) = marker_id(base, ENUM_VALUE_PREFIX) {
+            let value = self
+                .enum_values
+                .get(id)
+                .cloned()
+                .ok_or_else(|| VimError::new(716, "E716: Invalid enum value"))?;
+            if text == "name" {
+                return Ok(Value9::from_string(value.name.clone()));
+            }
+            if text == "ordinal" {
+                return Ok(Value9::number(value.ordinal));
+            }
+            let field = value.fields.borrow().get(&text).cloned();
+            if let Some(field) = field {
+                return Ok(Value9::Val(field));
+            }
+            return Err(VimError::new(
+                716,
+                format!("E716: Key not present in Dictionary: {text}"),
+            ));
+        }
+        Err(VimError::new(
+            1030,
+            "E1030: Using an unsupported value as a Dictionary",
+        ))
+    }
+
+    fn member_set(&mut self, base: &Value9, key: &VimString, value: Value9) -> Result<()> {
+        let text = key.to_string_lossy().into_owned();
+        if let Value9::Val(Value::Dict(dict)) = base {
+            dict.borrow_mut().set(key.clone(), value.legacy());
+            return Ok(());
+        }
+        if let Some(id) = marker_id(base, OBJECT_PREFIX) {
+            let object = self
+                .objects
+                .get(id)
+                .cloned()
+                .ok_or_else(|| VimError::new(716, "E716: Invalid object"))?;
+            let borrowed = object.borrow();
+            borrowed.fields.borrow_mut().insert(text, value.legacy());
+            return Ok(());
+        }
+        if let Some(id) = marker_id(base, CLASS_PREFIX) {
+            let class = self
+                .classes
+                .get(id)
+                .cloned()
+                .ok_or_else(|| VimError::new(716, "E716: Invalid class"))?;
+            class.static_vars.borrow_mut().insert(text, value.legacy());
+            return Ok(());
+        }
+        Err(VimError::new(
+            1030,
+            "E1030: Using an unsupported value as a Dictionary",
+        ))
+    }
+
+    fn register_export(&mut self, item: &Stmt, env: &Rc<RefCell<Env>>) -> Result<()> {
+        let mut entries: Vec<(VimString, Value)> = Vec::new();
+        match item {
+            Stmt::Var(declaration) => {
+                for name in pattern_names(&declaration.pattern) {
+                    let value = Self::env_lookup(env, &name).unwrap_or_else(Value9::null);
+                    entries.push((VimString::from(name), value.legacy()));
+                }
+            }
+            Stmt::Def(def) => {
+                let name = def.name.to_string_lossy().into_owned();
+                if let Some(callable) = Self::env_function(env, &name) {
+                    let value = self.make_funcref(callable);
+                    entries.push((VimString::from(name), value.legacy()));
+                }
+            }
+            Stmt::Class(class) => {
+                let name = class.name.to_string_lossy().into_owned();
+                if let Some(binding) = Self::env_type(env, &name) {
+                    let value = self.type_value(&binding);
+                    entries.push((VimString::from(name), value.legacy()));
+                }
+            }
+            Stmt::Enum(value) => {
+                let name = value.name.to_string_lossy().into_owned();
+                if let Some(binding) = Self::env_type(env, &name) {
+                    let value = self.type_value(&binding);
+                    entries.push((VimString::from(name), value.legacy()));
+                }
+            }
+            Stmt::Export(inner) => {
+                // Nested export forms are not expected, but keep them working.
+                return self.register_export(&inner.item, env);
+            }
+            Stmt::TypeAlias(_) | Stmt::Interface(_) => {}
+            _ => {}
+        }
+        if !entries.is_empty() {
+            if let Some(frame) = self.frames.last_mut() {
+                for (name, value) in entries {
+                    frame.exports.set(name, value);
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn exec_import(&mut self, import: &ImportDecl, env: &Rc<RefCell<Env>>) -> Result<()> {
+        let path_value = self.eval_expr(&import.path, env)?;
+        let path_text = match &path_value {
+            Value9::Val(Value::String(string)) => string.to_string_lossy().into_owned(),
+            Value9::Val(Value::Number(number)) => number.to_string(),
+            other => other.display(),
+        };
+        let resolved = self.resolve_import(&path_text, import.autoload)?;
+        if self.loading.iter().any(|path| path == &resolved) {
+            return Ok(());
+        }
+        let source = std::fs::read(&resolved).map_err(|error| {
+            VimError::new(
+                1053,
+                format!("E1053: Could not import {:?}: {error}", path_text),
+            )
+        })?;
+        let script = parser::parse_script(&source)?;
+        let dir = resolved.parent().map(|parent| parent.to_path_buf());
+        let frame = ScriptFrame {
+            env: Rc::new(RefCell::new(Env::default())),
+            exports: VimDict::new(),
+            dir,
+        };
+        self.frames.push(frame);
+        self.loading.push(resolved.clone());
+        let result = {
+            let imported_env = self.current_env();
+            self.exec_items(&script.items, &imported_env)
+        };
+        self.loading.pop();
+        let frame = self.frames.pop().expect("import frame");
+        result?;
+        let mut namespace = VimDict::new();
+        for entry in frame.exports.entries {
+            namespace.set(entry.key, entry.value);
+        }
+        let alias = match &import.alias {
+            Some(alias) => alias.to_string_lossy().into_owned(),
+            None => Path::new(&path_text)
+                .file_stem()
+                .and_then(|stem| stem.to_str())
+                .unwrap_or("imported")
+                .to_string(),
+        };
+        let slot = Slot {
+            value: Value9::Val(Value::dict(namespace)),
+            locked: true,
+        };
+        env.borrow_mut().vars.insert(alias, slot);
+        Ok(())
+    }
+
+    fn resolve_import(&self, text: &str, autoload: bool) -> Result<PathBuf> {
+        let candidate = Path::new(text);
+        if candidate.is_absolute() {
+            return Ok(candidate.to_path_buf());
+        }
+        let mut roots: Vec<PathBuf> = Vec::new();
+        if let Some(dir) = self.current_dir() {
+            roots.push(dir);
+        }
+        if let Ok(runtime) = std::env::var("VIMRUNTIME") {
+            let runtime = PathBuf::from(runtime);
+            if autoload {
+                roots.push(runtime.join("autoload"));
+            } else {
+                roots.push(runtime.join("import"));
+            }
+            roots.push(runtime);
+        }
+        for root in roots {
+            let path = root.join(candidate);
+            if path.is_file() {
+                return Ok(path);
+            }
+        }
+        if candidate.is_file() {
+            return Ok(candidate.to_path_buf());
+        }
+        Err(VimError::new(
+            1053,
+            format!("E1053: Could not import {text:?}"),
+        ))
+    }
+}
+
+fn default_for_type(ty: Option<&TypeExpr>) -> Value9 {
+    match ty {
+        Some(TypeExpr::Named(name)) => match name.as_bytes() {
+            b"number" => Value9::number(0),
+            b"float" => Value9::Val(Value::Float(0.0)),
+            b"string" => Value9::from_string(""),
+            b"bool" => Value9::Val(Value::Bool(false)),
+            b"list" => Value9::list(Vec::new()),
+            b"dict" => Value9::Val(Value::dict(VimDict::new())),
+            b"blob" => Value9::Val(Value::blob(Vec::new())),
+            _ => Value9::null(),
+        },
+        Some(TypeExpr::List(_)) => Value9::list(Vec::new()),
+        Some(TypeExpr::Dict(_)) => Value9::Val(Value::dict(VimDict::new())),
+        Some(TypeExpr::Tuple { .. }) => Value9::Tuple(Vec::new()),
+        _ => Value9::null(),
+    }
+}
+
+fn pattern_names(pattern: &VarPattern) -> Vec<String> {
+    match pattern {
+        VarPattern::Name(name) => vec![name.name.to_string_lossy().into_owned()],
+        VarPattern::List { items, rest } => {
+            let mut names = Vec::new();
+            for item in items {
+                names.extend(pattern_names(item));
+            }
+            if let Some(rest) = rest {
+                names.extend(pattern_names(rest));
+            }
+            names
+        }
+    }
+}
+
+/// Parse and execute a Vim9 script file, resolving imports relative to it.
+pub fn run_script_file(path: &Path) -> Result<RunOutput> {
+    let source = std::fs::read(path).map_err(|error| {
+        VimError::new(
+            484,
+            format!("E484: Can't open file {}: {error}", path.display()),
+        )
+    })?;
+    let script = parser::parse_script(&source)?;
+    let mut interpreter = Interpreter::new();
+    let dir = path.parent().map(|parent| parent.to_path_buf());
+    interpreter.execute_script_at(&script, dir)?;
+    Ok(RunOutput {
+        messages: interpreter.messages,
+    })
 }
