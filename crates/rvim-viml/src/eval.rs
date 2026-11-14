@@ -448,6 +448,8 @@ pub(crate) fn call_funcref(
                 script::call_user_function(ctx, &function, &all_args, bound_dict)
             } else if builtins::is_builtin(&canonical) {
                 builtins::call_builtin(ctx, &canonical, &all_args)
+            } else if let Some(value) = ctx.host.call_function(&canonical, &all_args)? {
+                Ok(value)
             } else {
                 Err(codes::e117(&name))
             }
@@ -581,6 +583,9 @@ fn autoload_for(ctx: &mut Ctx, name: &str) -> Result<()> {
         return Ok(());
     }
     if let Some((path, bytes)) = ctx.host.autoload_script(&prefix)? {
+        if ctx.host.run_vim9_script(&bytes, &path, ctx.runtime)? {
+            return Ok(());
+        }
         crate::script::run_sourced_script(ctx, &path, &bytes)?;
     }
     Ok(())
@@ -750,7 +755,7 @@ pub(crate) fn delete_var(
         }
     };
     match scope {
-        Some(Scope::Global) => match ctx.runtime.remove_global_checked(&name.to_string_lossy())? {
+        Some(Scope::Global) => match ctx.runtime.remove_global(&name.to_string_lossy()) {
             Some(_) => Ok(()),
             None => missing(),
         },
@@ -799,9 +804,6 @@ fn remove_from_dict(dict: &DictRef, name: &VimString, display: &str, bang: bool)
     let mut dict = dict
         .try_borrow_mut()
         .map_err(|_| VimError::plain(format!("Dictionary is already borrowed: {display}")))?;
-    if dict.locked || dict.entry_locked(name) {
-        return Err(codes::e741(display));
-    }
     if dict.remove(name).is_some() || bang {
         Ok(())
     } else {

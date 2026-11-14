@@ -636,7 +636,7 @@ fn builtin_exists_has_and_eval() {
     );
     assert_eq!(
         eval_value(&mut runtime, &mut host, "has('vim9script')"),
-        Value::Number(0)
+        Value::Number(1)
     );
     assert_eq!(
         eval_value(&mut runtime, &mut host, "has('rvim')"),

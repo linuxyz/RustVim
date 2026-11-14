@@ -2108,14 +2108,41 @@ impl Editor {
         let source = apply_scriptencoding(source);
         let previous_script_file = self.script_file.replace(name.to_string());
         let override_script = self.viml_script_override.take();
+        let vim9_header = rvim_viml::vim9::parser::find_vim9_header(&source);
         let mut runtime = std::mem::take(&mut self.viml);
         let vars = std::mem::take(&mut self.viml_vars);
         let mut host = crate::viml_host::EditorVimHost::new(self, vars);
-        let result = match override_script {
-            Some(script_id) => {
-                rvim_viml::execute_script_in_context(&source, script_id, &mut runtime, &mut host)
+        let result = if let Some((offset, _line)) = vim9_header {
+            // vim9-mix: run a legacy preamble first (it normally just checks
+            // has('vim9script') and finishes), then execute the Vim9 part.
+            let prefix = if offset > 0 {
+                rvim_viml::execute_script(&source[..offset], name, &mut runtime, &mut host)
+            } else {
+                Ok(())
+            };
+            match prefix {
+                Ok(()) => {
+                    let path = std::path::Path::new(name);
+                    let script_path = path.parent().map(|_| path);
+                    rvim_viml::vim9::eval::run_script_in_host(
+                        &source[offset..],
+                        script_path,
+                        &mut runtime,
+                        &mut host,
+                    )
+                }
+                Err(error) => Err(error),
             }
-            None => rvim_viml::execute_script(&source, name, &mut runtime, &mut host),
+        } else {
+            match override_script {
+                Some(script_id) => rvim_viml::execute_script_in_context(
+                    &source,
+                    script_id,
+                    &mut runtime,
+                    &mut host,
+                ),
+                None => rvim_viml::execute_script(&source, name, &mut runtime, &mut host),
+            }
         };
         let vars = std::mem::take(&mut host.vars);
         drop(host);

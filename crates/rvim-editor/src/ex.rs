@@ -15,6 +15,12 @@ pub fn execute(editor: &mut Editor, line: &str) -> Result<(), VimError> {
 }
 
 fn execute_command(editor: &mut Editor, mut command: ExCommand) -> Result<(), VimError> {
+    // A range with no command (":+", ":1", ":'a,'b") just moves the cursor.
+    if command.name.is_empty() && !command.range.addresses.is_empty() {
+        let range = resolve_range(editor, &command.range)?;
+        editor.set_cursor(BufPos::new(range.end, 0));
+        return Ok(());
+    }
     let modifiers = std::mem::take(&mut command.modifiers);
     let previous_filter = editor.messages.filter.take();
     if let Some(filter) = command.filter.take() {
@@ -1364,6 +1370,10 @@ fn execute_command_inner(editor: &mut Editor, command: ExCommand) -> Result<(), 
                 editor.runtime.find(names).into_iter().collect()
             };
             if matches.is_empty() {
+                if all {
+                    // Vim's ":runtime!" does not report a missing file.
+                    return Ok(());
+                }
                 return Err(VimError::new(
                     484,
                     format!("Can't find {names} in runtimepath"),
@@ -2369,10 +2379,17 @@ fn parse_global_args(args: &str) -> Option<(String, String)> {
 }
 
 fn handle_substitute(editor: &mut Editor, command: &ExCommand) -> Result<(), VimError> {
-    if command.args.trim().is_empty() {
+    // "s!pat!rep!" uses '!' as the delimiter; the Ex parser consumes it as the
+    // command bang flag, so put it back before parsing.
+    let raw_args = if command.bang {
+        format!("!{}", command.args)
+    } else {
+        command.args.clone()
+    };
+    if raw_args.trim().is_empty() {
         return repeat_substitute(editor, &command.range);
     }
-    let Some((pattern, replacement, flags)) = parse_substitute(&command.args) else {
+    let Some((pattern, replacement, flags)) = parse_substitute(&raw_args) else {
         return Err(VimError::new(474, "Invalid substitute arguments"));
     };
     let pattern = if pattern.is_empty() {
@@ -3412,6 +3429,7 @@ pub fn resolve_range(editor: &Editor, range: &RangeSpec) -> Result<ResolvedRange
         return Ok(ResolvedRange::new(1, last));
     }
     let mut lines = Vec::new();
+    let mut previous_line: Option<u32> = None;
     for address in &range.addresses {
         let mut line = match &address.kind {
             AddressKind::Current | AddressKind::None => current,
@@ -3422,14 +3440,20 @@ pub fn resolve_range(editor: &Editor, range: &RangeSpec) -> Result<ResolvedRange
                 .and_then(|buffer| buffer.marks.get(mark))
                 .map(|pos| pos.lnum)
                 .ok_or_else(|| VimError::new(20, format!("Mark not set: {mark}")))?,
-            AddressKind::Search { pattern, direction } => {
-                simple_search_between(editor, pattern, *direction > 0, current, current, true)
-                    .map(|pos| pos.lnum)
-                    .ok_or_else(|| VimError::new(486, format!("Pattern not found: {pattern}")))?
-            }
+            AddressKind::Search { pattern, direction } => simple_search_between(
+                editor,
+                pattern,
+                *direction > 0,
+                previous_line.unwrap_or(current),
+                previous_line.unwrap_or(current),
+                true,
+            )
+            .map(|pos| pos.lnum)
+            .ok_or_else(|| VimError::new(486, format!("Pattern not found: {pattern}")))?,
             AddressKind::WholeFile => 1,
         };
         line = (line as i64 + address.offset as i64).clamp(1, last as i64) as u32;
+        previous_line = Some(line);
         if let Some((pattern, direction)) = &address.offset_pattern {
             line = simple_search_between(editor, pattern, *direction > 0, line, line, true)
                 .map(|pos| pos.lnum)

@@ -17,7 +17,7 @@ Scope is a product decision, not an accident. Every exclusion has:
 | Area | Status | Runtime answer | Re-entry |
 |---|---|---|---|
 | Vi/Ex compatibility mode | **Excluded** | <code>has('compatible')</code> false; <code>'compatible'</code> cannot be enabled | Not planned; Vim semantics only |
-| Vim9 script | **Deferred (in progress)** | <code>has('vim9script')</code> false; Vim9 files skipped with warning | Front end landed (parser); evaluator/classes next - [VIM9-PLAN.md](VIM9-PLAN.md) |
+| Vim9 script | **Supported (runtime-grade)** | <code>has('vim9script')</code> true; 19 Tier C checks + compiler/context pass | Remaining limits in section 3 - [VIM9-PLAN.md](VIM9-PLAN.md) |
 | GUI | **Interface only** | <code>has('gui')</code> and <code>has('gui_running')</code> false | A new <code>rvim-gui</code> backend |
 | Terminal emulator | **Descoped** | <code>has('terminal')</code> false; no <code>:terminal</code>/<code>term_*</code> | Dedicated TERM milestone if re-approved |
 | Printing | Deferred (P4 optional) | <code>has('printer')</code> false; <code>:hardcopy</code> errors | MISC-02 |
@@ -90,42 +90,38 @@ tests against the <code>ex</code> binary. It is not a small flag.
 
 ---
 
-## 3. Vim9 script is deferred
+## 3. Vim9 script support and documented limits
 
-Status: the Vim9 front end (lexer, AST, parser) is implemented in
-<code>crates/rvim-viml/src/vim9/</code> and parses the corpus plus all 65 real
-Vim9 files of the pinned runtime.  Evaluation and the
-<code>has('vim9script')</code> flip are still pending, so the runtime contract
-below is unchanged.  The phase plan, gates and progress are tracked in
-[VIM9-PLAN.md](VIM9-PLAN.md).
+Status: runtime-grade Vim9 script is implemented.  The lexer, AST, parser,
+evaluator, classes, interfaces, enums, type aliases, imports/exports and the
+editor script loader live in <code>crates/rvim-viml/src/vim9/</code> plus the
+editor host bridge.  <code>has('vim9script')</code> is 1; the 19 Tier C Vim9
+checks and <code>compiler/context.vim</code> pass; the compatibility matrix is
+A 14/14, B 48/48, C 789/790 (only the environment-dependent
+<code>syntax/glimmer.vim</code> artefact remains); the Vim9 differential corpus
+passes 26/26 oracle-checked cases and the workspace has 629 tests.
 
-### What was deferred
+Documented approximations (deliberately not claimed as full parity):
 
-- <code>vim9script</code> syntax and semantics.
-- <code>:def</code>/<code>:enddef</code>, compiled functions,
-  <code>:defcompile</code>, <code>:disassemble</code>.
-- <code>:class</code>, <code>:interface</code>, <code>:enum</code>,
-  <code>:type</code>, object/type system.
-- <code>:import</code>/<code>:export</code>, Vim9 autoload imports.
-- <code>:var</code>, <code>:final</code>, <code>:const</code> as Vim9
-  declarations, and <code>:legacy</code>/<code>:vim9cmd</code> modifiers.
-
-Legacy Vim script (<code>:function</code>, <code>:let</code>, lambdas,
-<code>:try</code>, autoload) is fully in scope and is required by the runtime.
-
-### Runtime contract
-
-~~~text
-has('vim9script')          -> 0
-:vim9script                -> E... (Vim9 script is not supported)
-:def                       -> E... (use :function in legacy Vim script)
-vim9script file (sourced)  -> skipped with one verbose warning by default
---vim9=error               -> sourcing a Vim9 file is a hard error
-~~~
-
-The default skip policy exists because the pinned runtime contains Vim9 files,
-some of which provide optional or Vim9-only features. The skip is recorded in
-the compatibility matrix; it is not silent.
+- No strict Vim9 static type checker.  Type annotations are parsed and used
+  for defaults and object members, but type errors are mostly caught at run
+  time and diagnostics are less precise than Vim's compiler.
+- Legacy <code>:import</code> of a Vim9 file binds a namespace of no-op
+  function stubs; calls into compiled Vim9 functions from a legacy script are
+  not executed (Vim9-to-Vim9 calls and Vim9 autoload work).
+- Vim9 scripts sourced from a legacy script execute against the shared editor
+  runtime, but Vim9 callables defined there are not retained for later legacy
+  calls.
+- vim9-mix files with legacy code before the header are supported by running
+  the legacy preamble then the Vim9 part; mixed-mode <code>:def</code> blocks
+  inside legacy scripts are parsed and skipped.
+- Generic type parameters are accepted/parsed, call-site type arguments are
+  ignored at run time, and class generics are accepted more permissively than
+  Vim.  Interface conformance is not fully checked at compile time.
+- <code>super</code> member access is not implemented (neither the corpus nor
+  the pinned runtime files need it).
+- Vim's own test_vim9_*.vim suite has not been run in full; hardening is
+  tracked in Phase 5 of [VIM9-PLAN.md](VIM9-PLAN.md).
 
 ### Runtime impact
 

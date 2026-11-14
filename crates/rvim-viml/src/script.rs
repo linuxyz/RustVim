@@ -126,6 +126,13 @@ pub enum StmtKind {
     Delfunction(VimString),
     Eval(Expr),
     Ex(String),
+    /// A legacy ":import" of a Vim9 script.  The host loads the file and the
+    /// exported functions become a script-local namespace dictionary.
+    Import {
+        path: VimString,
+        alias: Option<VimString>,
+        autoload: bool,
+    },
 }
 
 #[derive(Clone, Debug)]
@@ -855,6 +862,38 @@ impl BlockParser {
             let Some(command) = head.command else {
                 let trimmed = trim_start(&head.text);
                 let (word, _) = read_word(trimmed);
+                // Vim 9 mixed scripts define compiled functions in legacy
+                // files.  Loading them is enough for syntax/plugin files; the
+                // definitions are skipped (documented approximation).
+                if word == b"def" || word == b"def!" {
+                    self.index += 1;
+                    while self.index < self.lines.len() {
+                        let candidate = trim_start(&self.lines[self.index].text);
+                        self.index += 1;
+                        if candidate.starts_with(b"enddef") {
+                            break;
+                        }
+                    }
+                    continue;
+                }
+                // Legacy scripts may :import a Vim9 script; the host loads it
+                // and exposes the exported functions as a namespace.
+                if word == b"import" {
+                    if let Some((path, alias, autoload)) = parse_legacy_import(trimmed) {
+                        self.index += 1;
+                        statements.push(Stmt {
+                            line: line.line,
+                            silent: head.silent,
+                            force: head.force,
+                            kind: StmtKind::Import {
+                                path,
+                                alias,
+                                autoload,
+                            },
+                        });
+                        continue;
+                    }
+                }
                 if trimmed.starts_with(b"vim9script") || is_vim9_command(word) {
                     // Vim9 script is deliberately out of scope (like the
                     // terminal emulator); report a coded error so tooling and
@@ -1326,8 +1365,8 @@ fn parse_function_name(parser: &mut Parser) -> Result<VimString> {
                 name
             }
         }
-        TokenKind::ScopedVar(Scope::Script, name) => {
-            VimString::from(format!("s:{}", name.to_string_lossy()))
+        TokenKind::ScopedVar(scope, name) => {
+            VimString::from(format!("{}{}", scope.prefix(), name.to_string_lossy()))
         }
         _ => return Err(codes::e15("invalid function name")),
     };
@@ -1652,10 +1691,46 @@ pub(crate) fn exec_statements(ctx: &mut Ctx, statements: &[Stmt]) -> Result<Flow
                 crate::gc::maybe_collect_cycles();
             }
             Ok(flow) => return Ok(flow),
-            Err(error) => return Err(error),
+            Err(error) => {
+                return Err(error);
+            }
         }
     }
     Ok(Flow::Normal)
+}
+
+/// Parse "import ['autoload'] 'path' [as alias]".
+fn parse_legacy_import(trimmed: &[u8]) -> Option<(VimString, Option<VimString>, bool)> {
+    let rest = trimmed.strip_prefix(b"import")?;
+    let mut rest = trim_start(rest);
+    let mut autoload = false;
+    if let Some(after) = rest.strip_prefix(b"autoload") {
+        let after = trim_start(after);
+        if after.len() != rest.len() - b"autoload".len() {
+            autoload = true;
+            rest = after;
+        }
+    }
+    let quote = *rest.first()?;
+    if quote != b'\'' && quote != b'"' {
+        return None;
+    }
+    let body = &rest[1..];
+    let end = body.iter().position(|byte| *byte == quote)?;
+    let path = VimString::from_bytes(body[..end].to_vec());
+    let after = trim_start(&body[end + 1..]);
+    let alias = if let Some(after) = after.strip_prefix(b"as") {
+        let after = trim_start(after);
+        let (name, _) = read_word(after);
+        if name.is_empty() {
+            None
+        } else {
+            Some(VimString::from_bytes(name.to_vec()))
+        }
+    } else {
+        None
+    };
+    Some((path, alias, autoload))
 }
 
 fn statement_command(statement: &Stmt) -> &'static str {
@@ -1687,6 +1762,7 @@ fn statement_command(statement: &Stmt) -> &'static str {
         StmtKind::Delfunction(_) => "delfunction",
         StmtKind::Eval(_) => "eval",
         StmtKind::Ex(_) => "ex",
+        StmtKind::Import { .. } => "import",
     }
 }
 
@@ -1868,11 +1944,41 @@ fn exec_statement(ctx: &mut Ctx, statement: &Stmt) -> Result<Flow> {
             eval::eval(ctx, expression)?;
             Ok(Flow::Normal)
         }
+        StmtKind::Import {
+            path,
+            alias,
+            autoload,
+        } => {
+            let path_text = path.to_string_lossy().into_owned();
+            let namespace = ctx.host.import_vim9_stubs(&path_text, *autoload)?;
+            let alias = alias.clone().unwrap_or_else(|| {
+                let stem = std::path::Path::new(&path_text)
+                    .file_stem()
+                    .and_then(|stem| stem.to_str())
+                    .unwrap_or("imported");
+                VimString::from(stem)
+            });
+            let script_vars = ctx
+                .current_script_vars()
+                .ok_or_else(|| codes::e108(&alias.to_string_lossy()))?;
+            script_vars
+                .borrow_mut()
+                .set(alias.clone(), namespace.clone());
+            // Legacy :import namespaces are script-local, but a plain-name
+            // call (as used by syntax/hitest.vim) resolves through globals in
+            // this engine; expose the namespace there too.
+            ctx.runtime
+                .set_global(alias.to_string_lossy().into_owned().as_str(), namespace);
+            Ok(Flow::Normal)
+        }
         StmtKind::Ex(command) => {
             // ":runtime" must load into this runtime; routing it through the
             // editor would start a nested script context and lose globals.
             if let Some((all, pattern)) = parse_runtime_invocation(command) {
                 for (name, bytes) in ctx.host.runtime_files(&pattern, all)? {
+                    if ctx.host.run_vim9_script(&bytes, &name, ctx.runtime)? {
+                        continue;
+                    }
                     run_sourced_script(ctx, &name, &bytes)?;
                 }
                 return Ok(Flow::Normal);
@@ -1992,7 +2098,7 @@ fn define_function(ctx: &mut Ctx, definition: &FunctionDef) -> Result<()> {
         .current_script_id()
         .unwrap_or_else(|| ScriptId::from_raw(0));
     let function = UserFunc {
-        name: VimString::from(canonical),
+        name: VimString::from(canonical.clone()),
         display_name: definition.written_name.clone(),
         params: definition.params.clone(),
         varargs: definition.varargs,
@@ -2007,6 +2113,44 @@ fn define_function(ctx: &mut Ctx, definition: &FunctionDef) -> Result<()> {
         cache: Rc::new(RefCell::new(None)),
     };
     ctx.runtime.define_function(function);
+    // "function! dict.Name()" also stores a Funcref in the dictionary.
+    if let Some((dict_path, func_name)) = written.rsplit_once('.') {
+        let dict_value = if let Some(dict_name) = dict_path.strip_prefix("s:") {
+            ctx.current_script_vars().map(|vars| {
+                let mut vars = vars.borrow_mut();
+                match vars.get_str(dict_name) {
+                    Some(Value::Dict(dict)) => Value::Dict(dict.clone()),
+                    _ => {
+                        let dict = VimDict::new();
+                        vars.set(VimString::from(dict_name), Value::dict(dict.clone()));
+                        Value::dict(dict)
+                    }
+                }
+            })
+        } else if let Some(dict_name) = dict_path.strip_prefix("g:") {
+            let globals = ctx.runtime.globals();
+            let mut globals = globals.borrow_mut();
+            match globals.get_str(dict_name) {
+                Some(Value::Dict(dict)) => Some(Value::Dict(dict.clone())),
+                _ => {
+                    let dict = VimDict::new();
+                    globals.set(VimString::from(dict_name), Value::dict(dict.clone()));
+                    Some(Value::dict(dict))
+                }
+            }
+        } else {
+            None
+        };
+        if let Some(Value::Dict(dict)) = dict_value {
+            let data = crate::value::FuncrefData::new(
+                canonical.clone(),
+                crate::value::FuncrefKind::User,
+                script_id,
+            );
+            dict.borrow_mut()
+                .set(VimString::from(func_name), Value::funcref(data));
+        }
+    }
     Ok(())
 }
 
@@ -2276,6 +2420,9 @@ fn execute_source(ctx: &mut Ctx, path: &VimString) -> Result<()> {
 pub(crate) fn run_sourced_script(ctx: &mut Ctx, name: &str, source: &[u8]) -> Result<()> {
     if ctx.runtime.source_depth() >= 100 {
         return Err(VimError::new(22, "Script sourcing is nested too deeply"));
+    }
+    if ctx.host.run_vim9_script(source, name, ctx.runtime)? {
+        return Ok(());
     }
     let id = ctx.runtime.push_script(name);
     ctx.runtime.enter_source();

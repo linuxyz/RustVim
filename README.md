@@ -14,7 +14,7 @@ implemented. See [docs/STATUS.md](docs/STATUS.md) for the honest feature-by-
 feature state, documented approximations and remaining P2/P3 work.
 
 **Target:** Vim 9.2.1338 behavior.  
-**Not:** Vi/Ex compatibility, Vim9 script (deferred), GUI (interface only),
+**Not:** Vi/Ex compatibility, GUI (interface only),
 terminal emulator (descoped).
 
 ---
@@ -32,7 +32,7 @@ terminal emulator (descoped).
 | [docs/RUNTIME-COMPAT.md](docs/RUNTIME-COMPAT.md) | Vim runtime loading, filetype/ftplugin/indent/syntax/help, tiers, harness. |
 | [docs/ROADMAP.md](docs/ROADMAP.md) | Milestones M0-M6, gates, recommended first slice. |
 | [docs/EXCLUSIONS.md](docs/EXCLUSIONS.md) | Vi/Ex, Vim9, GUI, terminal emulator, optional features and their contracts. |
-| [docs/VIM9-PLAN.md](docs/VIM9-PLAN.md) | Vim9 script implementation plan, phase gates and progress (front end landed). |
+| [docs/VIM9-PLAN.md](docs/VIM9-PLAN.md) | Vim9 script implementation plan, phase gates and progress (runtime-grade, feature enabled). |
 | [docs/STATUS.md](docs/STATUS.md) | Implemented P0/P1 surface, tests and known gaps. |
 | [docs/inventory/](docs/inventory/README.md) | Generated Vim command/option/function/key/event/feature inventories. |
 
@@ -58,7 +58,7 @@ load its syntax, ftplugin, help and color files.
 | tabline/statusline/cmdline not bound to the UI | [docs/UI-PROTOCOL.md](docs/UI-PROTOCOL.md) section 11; crate rule in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) section 3 |
 | Window implementation combined with the UI layer | [docs/WINDOWS.md](docs/WINDOWS.md) |
 | GUI deferred | [docs/EXCLUSIONS.md](docs/EXCLUSIONS.md) section 4; GUI seam in [docs/UI-PROTOCOL.md](docs/UI-PROTOCOL.md) section 14 |
-| Vim9 script deferred | [docs/EXCLUSIONS.md](docs/EXCLUSIONS.md) section 3; VIM9-01..05 in [docs/FEATURES.md](docs/FEATURES.md) |
+| Vim9 documented limits | [docs/EXCLUSIONS.md](docs/EXCLUSIONS.md) section 3; VIM9-01..05 in [docs/FEATURES.md](docs/FEATURES.md) |
 | QuickJS integrated | [docs/QUICKJS.md](docs/QUICKJS.md); JS-01..12 in [docs/FEATURES.md](docs/FEATURES.md) |
 | Vim runtime compatibility | [docs/RUNTIME-COMPAT.md](docs/RUNTIME-COMPAT.md) |
 | No Vi/Ex compatibility | [docs/EXCLUSIONS.md](docs/EXCLUSIONS.md) section 2 |
@@ -158,7 +158,7 @@ automation and <code>:make</code>/<code>:grep</code> still work.
 | Jobs/channels/timers | Yes |
 | TUI | Yes |
 | GUI | Interface only |
-| Vim9 script | Deferred, skipped by default |
+| Vim9 script | Runtime-grade (`has('vim9script')` is 1); documented limits in EXCLUSIONS section 3 |
 | Images (<code>+image</code>, sixel/kitty) | Deferred (P4) |
 | Vi/Ex compatibility mode | No |
 | Terminal emulator (<code>:terminal</code>, <code>term_*</code>) | Descoped |
@@ -196,7 +196,7 @@ cannot silently replace VimL semantics.
 
 ### Explicit exclusions
 
-Vi/Ex compatibility, Vim9, GUI, images (deferred) and the terminal emulator are
+Vi/Ex compatibility, GUI, images (deferred) and the terminal emulator are
 documented with runtime contracts (<code>has()</code>, errors, skip policy) and
 re-entry criteria. Unsupported features fail loudly or return honest flags.
 

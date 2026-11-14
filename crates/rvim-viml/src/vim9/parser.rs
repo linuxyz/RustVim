@@ -29,81 +29,59 @@ use super::token::{is_statement_keyword, InterpPart, Punct, Token, TokenKind};
 /// (the |vim9-mix| style); the preamble is skipped here and is the script
 /// loader's responsibility in later phases.
 pub fn parse_script(source: &[u8]) -> Result<Script> {
-    let (offset, line) = find_vim9_header(source);
-    if offset == 0 {
-        Parser::new(source)?.parse_script()
-    } else {
-        Parser::new_from(source, offset, line)?.parse_script()
+    match find_vim9_header(source) {
+        Some((offset, line)) if offset > 0 => {
+            Parser::new_from(source, offset, line)?.parse_script()
+        }
+        _ => Parser::new(source)?.parse_script(),
     }
 }
 
-/// Locate the first "vim9script" command line, returning its byte offset and
-/// 1-based line number.  Returns (0, 1) when no header is found.
-///
-/// Only the vim9-mix preambles found in practice are accepted: blank lines,
-/// legacy quote comments, and an "if ... has('vim9script') ... finish ...
-/// endif" guard.  A file whose first real command is legacy code is not a
-/// Vim9 script even if the word vim9script appears later (for example inside
-/// a heredoc).
-fn find_vim9_header(source: &[u8]) -> (usize, u32) {
+/// Public header discovery used by the editor script loader.  Returns the byte
+/// offset of the vim9script line and its 1-based line number, or None when the
+/// file is not a Vim9 script.  A header on the first line yields offset 0.
+pub fn find_vim9_header(source: &[u8]) -> Option<(usize, u32)> {
+    // A real header is a "vim9script" command at column 0.  Scanning for it
+    // anywhere in the file supports vim9-mix files that contain legacy code
+    // before the header (runtime/syntax/java.vim is an example); indented
+    // occurrences inside heredocs are not headers.
     let mut line = 1u32;
     let mut start = 0usize;
-    let mut guard_lines = 0usize;
-    while start <= source.len() {
-        let mut end = start;
-        while end < source.len() && source[end] != b'\n' {
-            end += 1;
-        }
-        let mut begin = start;
-        while begin < end && matches!(source[begin], b' ' | b'\t') {
-            begin += 1;
-        }
-        let mut finish = end;
-        while finish > begin && matches!(source[finish - 1], b'\r' | b' ' | b'\t') {
-            finish -= 1;
-        }
-        let text = &source[begin..finish];
-        if text.is_empty() || text.starts_with(b"\"") {
-            // Blank line or legacy comment in a vim9-mix preamble.
-            if end >= source.len() {
-                break;
-            }
-            start = end + 1;
-            line += 1;
-            continue;
-        }
-        if text.starts_with(b"vim9script") {
-            let after = b"vim9script".len();
-            let boundary = text.len() == after || matches!(text[after], b' ' | b'\t' | b'#');
+    while start < source.len() {
+        if source[start..].starts_with(b"vim9script") {
+            let after = start + b"vim9script".len();
+            let boundary = after >= source.len()
+                || matches!(source[after], b' ' | b'\t' | b'#' | b'\r' | b'\n');
             if boundary {
-                return (start, line);
+                return Some((start, line));
             }
         }
-        if guard_lines == 0
-            && text.starts_with(b"if ")
-            && (contains_bytes(text, b"has('vim9script')")
-                || contains_bytes(text, b"has(\"vim9script\")")
-                || contains_bytes(text, b"v:version"))
-        {
-            guard_lines = 20;
-        } else if guard_lines == 0 {
-            return (0, 1);
-        } else {
-            guard_lines -= 1;
-        }
-        if end >= source.len() {
+        let Some(offset) = source[start..].iter().position(|byte| *byte == b'\n') else {
             break;
-        }
-        start = end + 1;
+        };
+        start += offset + 1;
         line += 1;
     }
-    (0, 1)
+    None
 }
 
-fn contains_bytes(haystack: &[u8], needle: &[u8]) -> bool {
-    haystack
-        .windows(needle.len())
-        .any(|window| window == needle)
+/// Parse one or more whitespace-separated expressions, as accepted by
+/// :execute and :echo in Vim9 (each expression is evaluated and joined with a
+/// space).
+pub fn parse_expressions(source: &[u8], line: u32) -> Result<Vec<Expr>> {
+    let mut parser = Parser::new_at(source, line)?;
+    let mut expressions = Vec::new();
+    loop {
+        expressions.push(parser.parse_expression()?);
+        if matches!(parser.tok.kind, TokenKind::Newline | TokenKind::Eof) {
+            break;
+        }
+        if expressions.len() > 64 {
+            return Err(parser.err(488, "E488: Too many expressions"));
+        }
+    }
+    parser.expect_line_end()?;
+    Ok(expressions)
 }
 
 /// Parse a single expression.  Used by string interpolation and tests.
@@ -2209,7 +2187,7 @@ fn is_command_continuation(text: &[u8]) -> bool {
     }
     matches!(
         text.first(),
-        Some(b'+' | b'-' | b'*' | b'/' | b'%' | b'.' | b'?' | b':')
+        Some(b'+' | b'-' | b'*' | b'/' | b'%' | b'.' | b'?')
     )
 }
 

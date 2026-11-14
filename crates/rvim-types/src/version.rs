@@ -10,9 +10,8 @@ pub const RVIM_VERSION: &str = env!("CARGO_PKG_VERSION");
 pub fn has_feature(name: &str) -> bool {
     let name = name.to_ascii_lowercase();
     match name.as_str() {
-        "vim9script" | "terminal" | "gui" | "gui_running" | "clientserver" | "sun_workshop" => {
-            false
-        }
+        "vim9script" => true,
+        "terminal" | "gui" | "gui_running" | "clientserver" | "sun_workshop" => false,
         "image" | "images" | "sixel" | "kitty" | "pixelm" => false,
         "quickjs" => false,
         "unix" => cfg!(unix),
@@ -31,11 +30,12 @@ pub fn has_feature(name: &str) -> bool {
         "filterpipe" | "quickfix" | "linebreak" | "wildmenu" | "digraphs" | "statusline_click"
         | "compl_func" => true,
         "folding" | "signs" | "textprop" | "diff" | "find_id" => true,
-        "spell" | "session" | "crypt" | "vartabs" | "printer" | "postscript" | "arabic"
-        | "rightleft" | "xim" | "menu" | "toolbar" | "wayland" | "tabpanel" | "termguicolors"
-        | "mouseshape" | "browse" | "keymap" | "langmap" | "autochdir" | "autoshelldir"
-        | "emacs_tags" | "xterm_clipboard" | "render_options" | "waks" | "con_dialog"
-        | "balloon_eval" | "unsupported" => false,
+        "spell" | "session" | "crypt" | "printer" | "postscript" | "arabic" | "rightleft"
+        | "xim" | "menu" | "toolbar" | "wayland" | "tabpanel" | "mouseshape" | "browse"
+        | "keymap" | "langmap" | "autochdir" | "autoshelldir" | "emacs_tags"
+        | "xterm_clipboard" | "render_options" | "waks" | "con_dialog" | "balloon_eval"
+        | "unsupported" => false,
+        "vartabs" | "termguicolors" => true,
         "cscope" | "netbeans_intg" => false,
         "python" | "python3" | "ruby" | "perl" | "tcl" | "lua" | "mzscheme" => false,
         "job" | "channel" | "timers" | "pty" => cfg!(unix),

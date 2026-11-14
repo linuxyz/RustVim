@@ -8,7 +8,7 @@ VimL、syntax、runtime/help、窗口/tab、映射、autocmd、quickfix/tags/ses
 [docs/STATUS.md](docs/STATUS.md)。
 
 **目标：** 对齐 Vim 9.2.1338 的可观察行为。  
-**范围：** Vi/Ex 兼容模式不做；Vim9script、GUI（只留接口）、图像协议暂缓；
+**范围：** Vi/Ex 兼容模式不做；GUI（只留接口）、图像协议暂缓；
 终端模拟器（<code>:terminal</code>、Terminal-Job、<code>term_*</code>）已移除。
 
 ---
@@ -27,7 +27,7 @@ VimL、syntax、runtime/help、窗口/tab、映射、autocmd、quickfix/tags/ses
 | [docs/RUNTIME-COMPAT.md](docs/RUNTIME-COMPAT.md) | 运行时加载顺序、filetype/ftplugin/indent/syntax/help、Tier A/B/C 和测试。 |
 | [docs/ROADMAP.md](docs/ROADMAP.md) | M0–M6 里程碑、验收门槛、推荐的第一条纵向切片。 |
 | [docs/EXCLUSIONS.md](docs/EXCLUSIONS.md) | Vi/Ex、Vim9、GUI、终端模拟器、可选功能的行为契约。 |
-| [docs/VIM9-PLAN.md](docs/VIM9-PLAN.md) | Vim9 脚本实现计划、阶段门与进度（前端已落地）。 |
+| [docs/VIM9-PLAN.md](docs/VIM9-PLAN.md) | Vim9 脚本实现计划、阶段门与进度（runtime 级已启用）。 |
 | [README.md](README.md) | 英文入口。 |
 
 机械清单（由 Vim runtime 自动生成）在 [docs/inventory/](docs/inventory/README.md)：
@@ -85,7 +85,7 @@ plugin、ftplugin、indent、syntax、colors、compiler、help tags。Tier A 必
 |---|---|
 | Vim 的 Ex 命令语言 | 实现（这是 Vim 的命令行，不是 Vi 兼容模式） |
 | Vi/Ex 兼容模式、<code>-e</code>/<code>-E</code>、<code>'compatible'</code> | 不做 |
-| Vim9script | 暂缓；检测并跳过 <code>vim9script</code> 文件，<code>has('vim9script')</code> 为 0 |
+| Vim9script | runtime 级支持，<code>has('vim9script')</code> 为 1；近似项见 EXCLUSIONS 第 3 节 |
 | GUI | 只定义接口，不实现 |
 | 终端模拟器 | **已移除**；<code>has('terminal')</code> 为 0；jobs/channels 保留 |
 | QuickJS | 实现，作为可选 Cargo feature |

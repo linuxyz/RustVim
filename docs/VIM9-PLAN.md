@@ -130,7 +130,7 @@ tests and debugging); they sum to ~58-93M for target B.
   integration is left for Phase 3.  Vim's own test_vim9_*.vim subset and the
   strict static type checker remain Phase 5 hardening.
 
-### Phase 3 - script loader, import/export, autoload (8-12M) [in progress]
+### Phase 3 - script loader, import/export, autoload (8-12M) [complete]
 - "vim9script" header handling in the script loader, script namespaces,
   export tables, import path resolution (relative, runtimepath, the 9.2
   "import/" directory, "import autoload" deferral), script-local lifetime,
@@ -138,12 +138,12 @@ tests and debugging); they sum to ~58-93M for target B.
   removal.
 - Gate: the runtime Vim9 scripts load and imports resolve; Tier A/B/C run with
   the feature enabled locally; no regression.
-- Evaluator-side import/export (script frames, relative and runtimepath import
-  resolution, export tables, cyclic-import guard) is already implemented and
-  validated by the corpus; the remaining work is wiring Vim9 sourcing and Ex
-  command dispatch into the editor.
+  Gate met: Vim9 sourcing, vim9-mix preambles, Ex command dispatch (syntax,
+  setlocal, autocmd, normal, runtime, source), legacy-to-Vim9 bridging,
+  imports (relative/runtimepath/import/autoload) and the feature flip work:
+  the runtime Vim9 scripts load and the matrix is A 14/14, B 48/48, C 789/790.
 
-### Phase 4 - classes, interfaces, enums (8-14M) [complete at evaluator level]
+### Phase 4 - classes, interfaces, enums (8-14M) [complete]
 - Member declarations/access (public/private/static/abstract), constructors,
   this/super, methods, objects, nested defs capturing this, class variables,
   abstract classes, interfaces (declaration and conformance as far as the
@@ -153,7 +153,7 @@ tests and debugging); they sum to ~58-93M for target B.
   (p17-p20, p23, p26) now pass byte for byte; super member access is not
   needed by the corpus or runtime files and remains a documented gap.
 
-### Phase 5 - diagnostics, Vim test subset, hardening (8-15M)
+### Phase 5 - diagnostics, Vim test subset, hardening (8-15M) [in progress]
 - Remaining type checks and Vim-like diagnostics needed by the test corpus;
   :defcompile; :disassemble (optional, best effort); profiling out of scope.
 - Run Vim's own test_vim9_*.vim subset headless through the differential
@@ -272,3 +272,27 @@ tests and debugging); they sum to ~58-93M for target B.
   - Remaining for Phase 3: editor-side sourcing of vim9script files, Ex
     command dispatch from Vim9 (so syntax files can run), vim9-mix preamble
     execution, and then the has(vim9script) flip in Phase 5.
+- 2026-11-15: Phase 3/4 complete, feature flip and compatibility gate met.
+  - Editor script loader: vim9script header detection (including column-0
+    headers after legacy code in vim9-mix files), legacy preamble execution,
+    Vim9 execution against the real editor host (Ex/syntax/setlocal/runtime/
+    source/normal dispatch with the interpreter runtime installed temporarily
+    so both engines share globals), :import/export and autoload loading.
+  - Legacy interop: mixed-mode def/def! blocks are skipped, legacy :import
+    binds Vim9 exports as stub namespaces, legacy :runtime/:source/autoload
+    dispatch Vim9 files through the loader, dotted dictionary functions work,
+    unlet of locked variables is allowed.
+  - Runtime fixes found by the matrix: column-0 header scan, whole-scope b:/
+    g:/v: dictionaries, option aliases (vts/ts/...), has('vartabs') and
+    has('termguicolors') true, getline(start,end) always returns a list,
+    setline grows empty buffers, range-only Ex commands move the cursor,
+    chained search addresses start from the previous address, append('.')
+    resolves the cursor line, '!' substitute delimiter and Vim9 comment
+    stripping, list concatenation, the exe abbreviation, and generated
+    def/enddef blocks from :execute.
+  - Matrix: A 14/14, B 48/48, C 789/790 (only the documented glimmer
+    artefact); Vim9 differential corpus 26/26; workspace 629 tests;
+    fmt/clippy/rustdoc clean.
+  - Remaining documented approximations: no strict static checker, legacy
+    import stubs, mixed def skipping, no cross-source Vim9 callable state, no
+    super member access, generics/interface conformance permissive.

@@ -3,6 +3,7 @@
 use rvim_types::{ScriptId, VimString};
 
 use crate::error::{codes, Result, VimError};
+use crate::runtime::VimRuntime;
 use crate::value::{Value, VimDict};
 
 /// Variable scopes that can cross the host boundary. The runtime owns
@@ -169,6 +170,23 @@ pub trait VimHost {
     fn error(&mut self, error: &VimError) {
         let text = error.to_string();
         self.message(&text);
+    }
+
+    /// Run a sourced file as Vim9 when it has a vim9script header.  Returns
+    /// false when the file is a legacy script and the caller must handle it.
+    fn run_vim9_script(
+        &mut self,
+        _source: &[u8],
+        _path: &str,
+        _runtime: &mut VimRuntime,
+    ) -> Result<bool> {
+        Ok(false)
+    }
+
+    /// Load a Vim9 script for a legacy :import statement and return a
+    /// namespace dictionary.  The default reports that the host cannot do it.
+    fn import_vim9_stubs(&mut self, _path: &str, _autoload: bool) -> Result<Value> {
+        Err(unsupported(":import of Vim9 scripts"))
     }
 
     /// Run an Ex command that the VimL engine does not implement itself.

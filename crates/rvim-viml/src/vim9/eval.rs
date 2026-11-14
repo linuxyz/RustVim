@@ -39,14 +39,113 @@ pub struct RunOutput {
     pub messages: Vec<String>,
 }
 
-/// Parse and execute a complete Vim9 script.
+/// Services the Vim9 evaluator needs from the embedding editor.
+///
+/// The standalone runner uses [BasicHost]; the editor implements this trait
+/// for its own host so :syntax/:set/:normal/:autocmd and other Ex commands
+/// run against the real editor state.
+pub trait Vim9Host: VimHost {
+    /// Execute an Ex command line from Vim9 code.  The editor temporarily
+    /// installs the interpreter runtime so both engines share globals.
+    fn execute_ex_command(&mut self, command: &str, _runtime: &mut VimRuntime) -> Result<Value> {
+        Err(VimError::new(
+            492,
+            format!("E492: Not an editor command: {command}"),
+        ))
+    }
+
+    /// Whether ":set"/":normal" should be handled by the editor rather than
+    /// the minimal implementations used by the standalone runner.
+    fn external_command(&mut self, _name: &str) -> bool {
+        false
+    }
+
+    /// Display :echo/:echomsg text.  The standalone runner records messages in
+    /// [RunOutput] instead.
+    fn echo(&mut self, _text: &str) {}
+
+    /// Run a legacy Vim script chunk (the "legacy" command prefix).
+    fn execute_legacy(&mut self, _source: &[u8], _runtime: &mut VimRuntime) -> Result<()> {
+        Err(VimError::new(
+            319,
+            "legacy execution is not supported by this host",
+        ))
+    }
+
+    /// Handle :normal for the minimal standalone host.
+    fn run_normal(&mut self, _keys: &str, _cursor: &mut usize) -> Result<()> {
+        Err(VimError::new(319, "normal is not supported by this host"))
+    }
+
+    /// Extra directories for :import (the import/ or autoload/ trees).
+    fn import_roots(&self, _autoload: bool) -> Vec<PathBuf> {
+        Vec::new()
+    }
+}
+
+impl Vim9Host for BasicHost {
+    fn run_normal(&mut self, keys: &str, cursor: &mut usize) -> Result<()> {
+        basic_normal(self, keys, cursor);
+        Ok(())
+    }
+}
+
+fn standalone_runtime() -> VimRuntime {
+    let mut runtime = VimRuntime::new();
+    runtime.set_vvar("exception", Value::String(VimString::new()));
+    runtime.set_vvar("stacktrace", Value::list(Vec::new()));
+    runtime.set_vvar("errmsg", Value::String(VimString::new()));
+    runtime
+}
+
+fn standalone_host() -> BasicHost {
+    let mut host = BasicHost::new();
+    for (name, value) in [
+        ("tabstop", Value::Number(8)),
+        ("shiftwidth", Value::Number(8)),
+        ("softtabstop", Value::Number(0)),
+        ("number", Value::Bool(false)),
+        ("laststatus", Value::Number(1)),
+        ("eventignore", Value::String(VimString::new())),
+        ("cpoptions", Value::String(VimString::from("aABceFs"))),
+        ("ignorecase", Value::Bool(false)),
+        ("encoding", Value::String(VimString::from("utf-8"))),
+        ("filetype", Value::String(VimString::new())),
+    ] {
+        host.options
+            .insert((HostOptionScope::Default, name.to_string()), value);
+    }
+    host.lines.push(VimString::new());
+    host.current_line = 1;
+    host
+}
+
+/// Parse and execute a complete Vim9 script with a standalone host.
 pub fn run_script(source: &[u8]) -> Result<RunOutput> {
     let script = parser::parse_script(source)?;
-    let mut interpreter = Interpreter::new();
-    interpreter.execute_script(&script)?;
-    Ok(RunOutput {
-        messages: interpreter.messages,
-    })
+    let mut runtime = standalone_runtime();
+    let mut host = standalone_host();
+    let messages = {
+        let mut interpreter = Interpreter::new(&mut runtime, &mut host);
+        interpreter.execute_script(&script)?;
+        interpreter.messages
+    };
+    Ok(RunOutput { messages })
+}
+
+/// Execute a parsed-or-raw Vim9 script with an editor-provided host/runtime.
+pub fn run_script_in_host(
+    source: &[u8],
+    path: Option<&Path>,
+    runtime: &mut VimRuntime,
+    host: &mut dyn Vim9Host,
+) -> Result<()> {
+    let script = parser::parse_script(source)?;
+    let dir = path
+        .and_then(|path| path.parent())
+        .map(|parent| parent.to_path_buf());
+    let mut interpreter = Interpreter::new(runtime, host);
+    interpreter.execute_script_at(&script, dir)
 }
 
 /// Control flow inside a function body or block.
@@ -159,11 +258,11 @@ struct EnumValue {
     fields: RefCell<HashMap<String, Value>>,
 }
 
-struct Interpreter {
+struct Interpreter<'h> {
     /// Legacy runtime, used for v: variables and builtin delegation.
-    runtime: VimRuntime,
-    /// In-memory host: options, buffer lines and registers.
-    host: BasicHost,
+    runtime: &'h mut VimRuntime,
+    /// Host: editor services, options, registers and buffer lines.
+    host: &'h mut dyn Vim9Host,
     messages: Vec<String>,
     frames: Vec<ScriptFrame>,
     callables: Vec<Rc<Callable>>,
@@ -173,33 +272,15 @@ struct Interpreter {
     enum_values: Vec<Rc<EnumValue>>,
     /// Import stack, to skip cyclic imports like Vim does.
     loading: Vec<PathBuf>,
+    /// Script environments of Vim9 autoload files, keyed by their prefix.
+    autoload_scripts: HashMap<String, Rc<RefCell<Env>>>,
+    /// Autoload prefixes currently being loaded (recursion guard).
+    loading_autoload: Vec<String>,
     cursor_col: usize,
 }
 
-impl Interpreter {
-    fn new() -> Self {
-        let mut runtime = VimRuntime::new();
-        runtime.set_vvar("exception", Value::String(VimString::new()));
-        runtime.set_vvar("stacktrace", Value::list(Vec::new()));
-        runtime.set_vvar("errmsg", Value::String(VimString::new()));
-        let mut host = BasicHost::new();
-        for (name, value) in [
-            ("tabstop", Value::Number(8)),
-            ("shiftwidth", Value::Number(8)),
-            ("softtabstop", Value::Number(0)),
-            ("number", Value::Bool(false)),
-            ("laststatus", Value::Number(1)),
-            ("eventignore", Value::String(VimString::new())),
-            ("cpoptions", Value::String(VimString::from("aABceFs"))),
-            ("ignorecase", Value::Bool(false)),
-            ("encoding", Value::String(VimString::from("utf-8"))),
-            ("filetype", Value::String(VimString::new())),
-        ] {
-            host.options
-                .insert((HostOptionScope::Default, name.to_string()), value);
-        }
-        host.lines.push(VimString::new());
-        host.current_line = 1;
+impl<'h> Interpreter<'h> {
+    fn new(runtime: &'h mut VimRuntime, host: &'h mut dyn Vim9Host) -> Self {
         Interpreter {
             runtime,
             host,
@@ -215,6 +296,8 @@ impl Interpreter {
             enums: Vec::new(),
             enum_values: Vec::new(),
             loading: Vec::new(),
+            autoload_scripts: HashMap::new(),
+            loading_autoload: Vec::new(),
             cursor_col: 0,
         }
     }
@@ -736,7 +819,8 @@ impl Interpreter {
     ) -> Result<()> {
         match scope {
             crate::lexer::Scope::Global => {
-                self.host.set_var(VarScope::Global, name, value.legacy())
+                self.runtime.set_global(name, value.legacy());
+                Ok(())
             }
             crate::lexer::Scope::Buffer => {
                 self.host.set_var(VarScope::Buffer, name, value.legacy())
@@ -842,7 +926,7 @@ impl Interpreter {
                     Some(crate::lexer::OptionScope::Global) => HostOptionScope::Global,
                     Some(crate::lexer::OptionScope::Local) => HostOptionScope::Local,
                 };
-                Ok(Value9::Val(self.host.get_option(scope, name)?))
+                Ok(Value9::Val(self.host.get_option(scope, option_name(name))?))
             }
             Expr::Env(name) => Ok(Value9::Val(self.host.get_env(name)?)),
             Expr::Register(register) => {
@@ -984,29 +1068,58 @@ impl Interpreter {
                 ))
             }
             Some(crate::lexer::Scope::Global) => {
+                if text.is_empty() {
+                    return Ok(Value9::Val(Value::dict(
+                        self.runtime.globals().borrow().clone(),
+                    )));
+                }
+                if let Some(value) = self.runtime.get_global(&text) {
+                    return Ok(Value9::Val(value));
+                }
                 Ok(Value9::Val(self.host.get_var(VarScope::Global, &text)?))
             }
             Some(crate::lexer::Scope::Buffer) => {
+                if text.is_empty() {
+                    return Ok(Value9::Val(self.host.get_scope_dict(VarScope::Buffer)?));
+                }
                 Ok(Value9::Val(self.host.get_var(VarScope::Buffer, &text)?))
             }
             Some(crate::lexer::Scope::Window) => {
+                if text.is_empty() {
+                    return Ok(Value9::Val(self.host.get_scope_dict(VarScope::Window)?));
+                }
                 Ok(Value9::Val(self.host.get_var(VarScope::Window, &text)?))
             }
             Some(crate::lexer::Scope::Tab) => {
+                if text.is_empty() {
+                    return Ok(Value9::Val(self.host.get_scope_dict(VarScope::Tab)?));
+                }
                 Ok(Value9::Val(self.host.get_var(VarScope::Tab, &text)?))
             }
-            Some(crate::lexer::Scope::Vim) => self
-                .runtime
-                .get_vvar(&text)
-                .map(Value9::Val)
-                .ok_or_else(|| VimError::new(121, format!("E121: Undefined variable: v:{text}"))),
+            Some(crate::lexer::Scope::Vim) => {
+                if text.is_empty() {
+                    return Ok(Value9::Val(Value::dict(self.runtime.vvar_dict().clone())));
+                }
+                self.runtime
+                    .get_vvar(&text)
+                    .map(Value9::Val)
+                    .ok_or_else(|| {
+                        VimError::new(121, format!("E121: Undefined variable: v:{text}"))
+                    })
+            }
             Some(crate::lexer::Scope::Script) => {
                 let script_env = self.current_env();
+                if text.is_empty() {
+                    return Ok(Value9::Val(Value::dict(env_dict(&script_env))));
+                }
                 Self::env_lookup(&script_env, &text).ok_or_else(|| {
                     VimError::new(121, format!("E121: Undefined variable: s:{text}"))
                 })
             }
             Some(crate::lexer::Scope::Local) | Some(crate::lexer::Scope::Argument) => {
+                if text.is_empty() {
+                    return Ok(Value9::Val(Value::dict(env_dict(env))));
+                }
                 Self::env_lookup(env, &text)
                     .ok_or_else(|| VimError::new(121, format!("E121: Undefined variable: {text}")))
             }
@@ -1048,6 +1161,13 @@ impl Interpreter {
         match op {
             BinaryOp::Add | BinaryOp::Sub | BinaryOp::Mul | BinaryOp::Div | BinaryOp::Rem => {
                 match (left, right) {
+                    (Value9::Val(Value::List(left)), Value9::Val(Value::List(right)))
+                        if op == BinaryOp::Add =>
+                    {
+                        let mut items = left.borrow().items.clone();
+                        items.extend(right.borrow().items.iter().cloned());
+                        Ok(Value9::Val(Value::list(items)))
+                    }
                     (Value9::Val(Value::Number(left)), Value9::Val(Value::Number(right))) => {
                         let value = match op {
                             BinaryOp::Add => left.wrapping_add(*right),
@@ -1362,7 +1482,8 @@ impl Interpreter {
                     Some(crate::lexer::OptionScope::Global) => HostOptionScope::Global,
                     Some(crate::lexer::OptionScope::Local) => HostOptionScope::Local,
                 };
-                self.host.set_option(scope, name, value.legacy())
+                self.host
+                    .set_option(scope, option_name(name), value.legacy())
             }
             Expr::Env(name) => {
                 let text = value.as_string().ok_or_else(|| {
@@ -1391,7 +1512,83 @@ impl Interpreter {
         if let Some(callable) = Self::env_function(env, name) {
             return self.call_callable(&callable, args);
         }
+        if name.contains('#') {
+            if let Some(value) = self.call_autoload(name, args.clone(), env)? {
+                return Ok(value);
+            }
+        }
         self.call_builtin(name, args, env)
+    }
+
+    /// Load and call a Vim9 autoload function such as tohtml#GetUserSettings.
+    /// Legacy autoload files are left to the legacy engine.
+    fn call_autoload(
+        &mut self,
+        name: &str,
+        args: Vec<Value9>,
+        _env: &Rc<RefCell<Env>>,
+    ) -> Result<Option<Value9>> {
+        let Some((prefix, function)) = name.rsplit_once('#') else {
+            return Ok(None);
+        };
+        if self.loading_autoload.iter().any(|item| item == prefix) {
+            return Ok(None);
+        }
+        let frame_env = match self.autoload_scripts.get(prefix).cloned() {
+            Some(env) => env,
+            None => {
+                let relative = format!("{}.vim", prefix.replace('#', "/"));
+                let Some(path) = self.find_autoload(&relative) else {
+                    return Ok(None);
+                };
+                let source = std::fs::read(&path).map_err(|error| {
+                    VimError::new(
+                        484,
+                        format!("E484: Can't open file {}: {error}", path.display()),
+                    )
+                })?;
+                if parser::find_vim9_header(&source).is_none() {
+                    return Ok(None);
+                }
+                let script = parser::parse_script(&source)?;
+                let env = Rc::new(RefCell::new(Env::default()));
+                self.frames.push(ScriptFrame {
+                    env: env.clone(),
+                    exports: VimDict::new(),
+                    dir: path.parent().map(|parent| parent.to_path_buf()),
+                });
+                self.loading_autoload.push(prefix.to_string());
+                let result = self.exec_items(&script.items, &env);
+                self.loading_autoload.pop();
+                let frame = self.frames.pop().expect("autoload frame");
+                result?;
+                let env = frame.env;
+                self.autoload_scripts
+                    .insert(prefix.to_string(), env.clone());
+                env
+            }
+        };
+        let Some(callable) = Self::env_function(&frame_env, function) else {
+            return Ok(None);
+        };
+        let value = self.call_callable(&callable, args)?;
+        Ok(Some(value))
+    }
+
+    fn find_autoload(&self, relative: &str) -> Option<PathBuf> {
+        for root in self.host.import_roots(true) {
+            let candidate = root.join(relative);
+            if candidate.is_file() {
+                return Some(candidate);
+            }
+        }
+        if let Ok(runtime) = std::env::var("VIMRUNTIME") {
+            let candidate = Path::new(&runtime).join("autoload").join(relative);
+            if candidate.is_file() {
+                return Some(candidate);
+            }
+        }
+        None
     }
 
     fn call_named_method(
@@ -1468,7 +1665,7 @@ impl Interpreter {
 
     fn call_builtin_legacy(&mut self, name: &str, args: Vec<Value9>) -> Result<Value9> {
         let legacy: Vec<Value> = args.iter().map(Value9::legacy).collect();
-        let value = crate::eval::call_function(name, legacy, &mut self.runtime, &mut self.host)?;
+        let value = crate::eval::call_function(name, legacy, self.runtime, self.host)?;
         Ok(Value9::Val(value))
     }
 
@@ -1635,28 +1832,69 @@ impl Interpreter {
         }
         let (name, arguments) = split_command(rest);
         match name {
-            "echomsg" | "echo" => {
-                let value = self.eval_command_expression(arguments, line, env)?;
-                self.messages.push(value.display());
+            "echomsg" | "echom" | "echo" | "echon" | "echoe" => {
+                let values = self.eval_command_expressions(arguments, line, env)?;
+                let text = values
+                    .iter()
+                    .map(Value9::display)
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                self.messages.push(text.clone());
+                self.host.echo(&text);
                 Ok(None)
             }
-            "execute" => {
-                let value = self.eval_command_expression(arguments, line, env)?;
-                let command = value.display();
-                for single in command.split('\n') {
-                    if single.trim().is_empty() {
-                        continue;
+            "execute" | "exe" => {
+                let values = self.eval_command_expressions(arguments, line, env)?;
+                let command = values
+                    .iter()
+                    .map(Value9::display)
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                let trimmed = command.trim();
+                if trimmed.is_empty() {
+                    return Ok(None);
+                }
+                // :execute body may contain multi-line definitions (def/enddef)
+                // and other script commands, so parse it like a script body and
+                // fall back to line-by-line command execution if that fails.
+                match parser::parse_script(trimmed.as_bytes()) {
+                    Ok(script) => {
+                        let flow = self.exec_items(&script.items, env)?;
+                        if matches!(flow, Flow::Finish) {
+                            Ok(Some(Flow::Finish))
+                        } else {
+                            Ok(None)
+                        }
                     }
-                    self.exec_command(&VimString::from(single.trim().to_string()), line, env)?;
+                    Err(_) => {
+                        for single in command.split('\n') {
+                            if single.trim().is_empty() {
+                                continue;
+                            }
+                            self.exec_command(
+                                &VimString::from(single.trim().to_string()),
+                                line,
+                                env,
+                            )?;
+                        }
+                        Ok(None)
+                    }
+                }
+            }
+            "set" => {
+                if self.host.external_command("set") {
+                    self.host.execute_ex_command(rest, self.runtime)?;
+                } else {
+                    self.command_set(arguments)?;
                 }
                 Ok(None)
             }
-            "set" => {
-                self.command_set(arguments);
-                Ok(None)
-            }
             "normal" | "normal!" => {
-                self.command_normal(arguments);
+                if self.host.external_command(name) {
+                    self.host.execute_ex_command(rest, self.runtime)?;
+                } else {
+                    self.host.run_normal(arguments, &mut self.cursor_col)?;
+                }
                 Ok(None)
             }
             "call" => {
@@ -1664,11 +1902,23 @@ impl Interpreter {
                 Ok(None)
             }
             "finish" => Ok(Some(Flow::Finish)),
+            "legacy" => {
+                self.host
+                    .execute_legacy(arguments.as_bytes(), self.runtime)?;
+                Ok(None)
+            }
             "scriptversion" | "defcompile" | "disassemble" => Ok(None),
-            _ => Err(VimError::new(
-                492,
-                format!("E492: Not an editor command: {name}"),
-            )),
+            _ => {
+                let unstripped = rest.trim_end();
+                let stripped = strip_vim9_comment(rest);
+                let first = self.host.execute_ex_command(unstripped, self.runtime);
+                if first.is_err() && stripped != unstripped {
+                    self.host.execute_ex_command(&stripped, self.runtime)?;
+                } else {
+                    first?;
+                }
+                Ok(None)
+            }
         }
     }
 
@@ -1682,7 +1932,21 @@ impl Interpreter {
         self.eval_expr(&expression, env)
     }
 
-    fn command_set(&mut self, arguments: &str) {
+    fn eval_command_expressions(
+        &mut self,
+        text: &str,
+        line: u32,
+        env: &Rc<RefCell<Env>>,
+    ) -> Result<Vec<Value9>> {
+        let expressions = parser::parse_expressions(text.as_bytes(), line)?;
+        let mut values = Vec::with_capacity(expressions.len());
+        for expression in &expressions {
+            values.push(self.eval_expr(expression, env)?);
+        }
+        Ok(values)
+    }
+
+    fn command_set(&mut self, arguments: &str) -> Result<()> {
         for token in arguments.split_whitespace() {
             if let Some((name, value)) = token.split_once('=') {
                 let value = if let Ok(number) = value.parse::<i64>() {
@@ -1693,89 +1957,22 @@ impl Interpreter {
                     Value::String(VimString::from(value))
                 };
                 self.host
-                    .options
-                    .insert((HostOptionScope::Default, name.to_string()), value);
+                    .set_option(HostOptionScope::Default, option_name(name), value)?;
             } else if let Some(name) = token.strip_prefix("no") {
-                self.host.options.insert(
-                    (HostOptionScope::Default, name.to_string()),
+                self.host.set_option(
+                    HostOptionScope::Default,
+                    option_name(name),
                     Value::Bool(false),
-                );
+                )?;
             } else {
-                self.host.options.insert(
-                    (HostOptionScope::Default, token.to_string()),
+                self.host.set_option(
+                    HostOptionScope::Default,
+                    option_name(token),
                     Value::Bool(true),
-                );
+                )?;
             }
         }
-    }
-
-    fn command_normal(&mut self, keys: &str) {
-        if self.host.lines.is_empty() {
-            self.host.lines.push(VimString::new());
-        }
-        let bytes = keys.as_bytes();
-        let mut index = 0usize;
-        while index < bytes.len() {
-            match bytes[index] {
-                b'i' | b'a' | b'A' | b'o' | b'O' => {
-                    self.normal_insert(bytes[index], &bytes[index + 1..]);
-                    return;
-                }
-                b'g' if bytes.get(index + 1) == Some(&b'g') => {
-                    self.host.current_line = 1;
-                    self.cursor_col = 0;
-                    index += 2;
-                }
-                b'G' => {
-                    self.host.current_line = self.host.lines.len().max(1) as i64;
-                    self.cursor_col = 0;
-                    index += 1;
-                }
-                _ => index += 1,
-            }
-        }
-    }
-
-    fn normal_insert(&mut self, command: u8, text: &[u8]) {
-        let line_index = (self.host.current_line.max(1) - 1) as usize;
-        while self.host.lines.len() <= line_index {
-            self.host.lines.push(VimString::new());
-        }
-        match command {
-            b'i' => {
-                let mut line = self.host.lines[line_index].as_bytes().to_vec();
-                let position = self.cursor_col.min(line.len());
-                line.splice(position..position, text.iter().copied());
-                self.host.lines[line_index] = VimString::from_bytes(line);
-                self.cursor_col = position + text.len();
-            }
-            b'a' => {
-                let mut line = self.host.lines[line_index].as_bytes().to_vec();
-                let position = (self.cursor_col + 1).min(line.len());
-                line.splice(position..position, text.iter().copied());
-                self.host.lines[line_index] = VimString::from_bytes(line);
-                self.cursor_col = position + text.len();
-            }
-            b'A' => {
-                let mut line = self.host.lines[line_index].as_bytes().to_vec();
-                line.extend_from_slice(text);
-                self.host.lines[line_index] = VimString::from_bytes(line);
-                self.cursor_col = self.host.lines[line_index].as_bytes().len();
-            }
-            b'o' | b'O' => {
-                let position = if command == b'o' {
-                    line_index + 1
-                } else {
-                    line_index
-                };
-                self.host
-                    .lines
-                    .insert(position, VimString::from_bytes(text.to_vec()));
-                self.host.current_line = position as i64 + 1;
-                self.cursor_col = text.len();
-            }
-            _ => {}
-        }
+        Ok(())
     }
 
     // ---------------------------------------------------------------
@@ -2251,6 +2448,7 @@ impl Interpreter {
         if let Some(dir) = self.current_dir() {
             roots.push(dir);
         }
+        roots.extend(self.host.import_roots(autoload));
         if let Ok(runtime) = std::env::var("VIMRUNTIME") {
             let runtime = PathBuf::from(runtime);
             if autoload {
@@ -2274,6 +2472,132 @@ impl Interpreter {
             format!("E1053: Could not import {text:?}"),
         ))
     }
+}
+
+/// Minimal :normal handling for the standalone runner: enough for the
+/// differential corpus (i, a, A, o, O, gg, G).
+fn basic_normal(host: &mut BasicHost, keys: &str, cursor: &mut usize) {
+    if host.lines.is_empty() {
+        host.lines.push(VimString::new());
+    }
+    let bytes = keys.as_bytes();
+    let mut index = 0usize;
+    while index < bytes.len() {
+        match bytes[index] {
+            b'i' | b'a' | b'A' | b'o' | b'O' => {
+                basic_normal_insert(host, bytes[index], &bytes[index + 1..], cursor);
+                return;
+            }
+            b'g' if bytes.get(index + 1) == Some(&b'g') => {
+                host.current_line = 1;
+                *cursor = 0;
+                index += 2;
+            }
+            b'G' => {
+                host.current_line = host.lines.len().max(1) as i64;
+                *cursor = 0;
+                index += 1;
+            }
+            _ => index += 1,
+        }
+    }
+}
+
+fn basic_normal_insert(host: &mut BasicHost, command: u8, text: &[u8], cursor: &mut usize) {
+    let line_index = (host.current_line.max(1) - 1) as usize;
+    while host.lines.len() <= line_index {
+        host.lines.push(VimString::new());
+    }
+    match command {
+        b'i' => {
+            let mut line = host.lines[line_index].as_bytes().to_vec();
+            let position = (*cursor).min(line.len());
+            line.splice(position..position, text.iter().copied());
+            host.lines[line_index] = VimString::from_bytes(line);
+            *cursor = position + text.len();
+        }
+        b'a' => {
+            let mut line = host.lines[line_index].as_bytes().to_vec();
+            let position = (*cursor + 1).min(line.len());
+            line.splice(position..position, text.iter().copied());
+            host.lines[line_index] = VimString::from_bytes(line);
+            *cursor = position + text.len();
+        }
+        b'A' => {
+            let mut line = host.lines[line_index].as_bytes().to_vec();
+            line.extend_from_slice(text);
+            host.lines[line_index] = VimString::from_bytes(line);
+            *cursor = host.lines[line_index].as_bytes().len();
+        }
+        b'o' | b'O' => {
+            let position = if command == b'o' {
+                line_index + 1
+            } else {
+                line_index
+            };
+            host.lines
+                .insert(position, VimString::from_bytes(text.to_vec()));
+            host.current_line = position as i64 + 1;
+            *cursor = text.len();
+        }
+        _ => {}
+    }
+}
+
+/// Map common Vim short option names to their long form.
+fn option_name(name: &str) -> &str {
+    match name {
+        "ts" => "tabstop",
+        "sw" => "shiftwidth",
+        "sts" => "softtabstop",
+        "et" => "expandtab",
+        "vts" => "vartabstop",
+        "fdm" => "foldmethod",
+        "fde" => "foldexpr",
+        "fdt" => "foldtext",
+        "tw" => "textwidth",
+        "se" => "selection",
+        other => other,
+    }
+}
+
+/// Remove a trailing Vim9 "#" comment, respecting quoted strings.
+fn strip_vim9_comment(text: &str) -> String {
+    let bytes = text.as_bytes();
+    let mut quote: Option<u8> = None;
+    let mut escaped = false;
+    for (index, byte) in bytes.iter().enumerate() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        match quote {
+            Some(active) => {
+                if *byte == b'\\' {
+                    escaped = true;
+                } else if *byte == active {
+                    quote = None;
+                }
+            }
+            None => match byte {
+                b'\'' | b'"' => quote = Some(*byte),
+                b'#' if index == 0 || bytes[index - 1].is_ascii_whitespace() => {
+                    return text[..index].trim_end().to_string();
+                }
+                _ => {}
+            },
+        }
+    }
+    text.trim_end().to_string()
+}
+
+fn env_dict(env: &Rc<RefCell<Env>>) -> VimDict {
+    let mut dict = VimDict::new();
+    let borrowed = env.borrow();
+    for (name, slot) in &borrowed.vars {
+        dict.set(VimString::from(name.as_str()), slot.value.legacy());
+    }
+    dict
 }
 
 fn default_for_type(ty: Option<&TypeExpr>) -> Value9 {
@@ -2320,10 +2644,13 @@ pub fn run_script_file(path: &Path) -> Result<RunOutput> {
         )
     })?;
     let script = parser::parse_script(&source)?;
-    let mut interpreter = Interpreter::new();
+    let mut runtime = standalone_runtime();
+    let mut host = standalone_host();
     let dir = path.parent().map(|parent| parent.to_path_buf());
-    interpreter.execute_script_at(&script, dir)?;
-    Ok(RunOutput {
-        messages: interpreter.messages,
-    })
+    let messages = {
+        let mut interpreter = Interpreter::new(&mut runtime, &mut host);
+        interpreter.execute_script_at(&script, dir)?;
+        interpreter.messages
+    };
+    Ok(RunOutput { messages })
 }

@@ -1,14 +1,15 @@
 use std::collections::HashMap;
 
 use rvim_viml::value::VimDict;
+use rvim_viml::vim9::eval::Vim9Host;
 use rvim_viml::{
     ExContext, OptionScope as VimOptionScope, Result as VimResult, Value, VarScope, VimError,
-    VimHost, VimString,
+    VimHost, VimRuntime, VimString,
 };
 
 use crate::editor::Editor;
 use crate::options::OptionValue;
-use rvim_types::{BufPos, WindowId};
+use rvim_types::{BufPos, ScriptId, WindowId};
 
 pub struct EditorVimHost<'a> {
     pub editor: &'a mut Editor,
@@ -48,6 +49,36 @@ impl EditorVimHost<'_> {
 }
 
 impl VimHost for EditorVimHost<'_> {
+    fn call_function(&mut self, name: &str, args: &[Value]) -> VimResult<Option<Value>> {
+        if name.contains("vim9stub:") {
+            return Ok(Some(Value::Number(0)));
+        }
+        self.invoke_function(name, args)
+    }
+
+    fn run_vim9_script(
+        &mut self,
+        source: &[u8],
+        path: &str,
+        runtime: &mut VimRuntime,
+    ) -> VimResult<bool> {
+        if rvim_viml::vim9::parser::find_vim9_header(source).is_none() {
+            return Ok(false);
+        }
+        rvim_viml::vim9::eval::run_script_in_host(
+            source,
+            Some(std::path::Path::new(path)),
+            runtime,
+            self,
+        )?;
+        Ok(true)
+    }
+
+    fn import_vim9_stubs(&mut self, path: &str, autoload: bool) -> VimResult<Value> {
+        self.vim9_stub_namespace(path, autoload)
+            .ok_or_else(|| VimError::new(1053, format!("E1053: Could not import {path:?}")))
+    }
+
     fn get_var(&mut self, scope: VarScope, name: &str) -> VimResult<Value> {
         if scope == VarScope::Buffer && name == "changedtick" {
             return Ok(Value::Number(
@@ -1510,10 +1541,15 @@ impl VimHost for EditorVimHost<'_> {
                 Ok(Some(Value::Number(0)))
             }
             "append" => {
-                let lnum = args
+                let spec = args
                     .first()
-                    .map(|value| value.echo_string().parse::<u32>().unwrap_or(0))
-                    .unwrap_or(0);
+                    .map(|value| value.echo_string())
+                    .unwrap_or_default();
+                let lnum = match spec.as_str() {
+                    "." => self.editor.cursor().lnum,
+                    "$" => self.editor.line_count(),
+                    other => other.parse::<u32>().unwrap_or(0),
+                };
                 let lines: Vec<String> = match args.get(1) {
                     Some(Value::List(list)) => list
                         .borrow()
@@ -3175,14 +3211,22 @@ impl VimHost for EditorVimHost<'_> {
     }
 
     fn set_line(&mut self, lnum: i64, text: &VimString) -> VimResult<()> {
+        let lnum = lnum.max(1) as u32;
         if let Some(buffer) = self.editor.current_buffer_mut() {
-            buffer.text.replace_line(lnum.max(1) as u32, text.clone());
+            // setline() can address lines beyond the end of an empty buffer;
+            // grow the text with empty lines first instead of dropping them.
+            while buffer.text.line_count() < lnum {
+                let before = buffer.text.line_count() + 1;
+                buffer.text.insert_line(before, VimString::new());
+            }
+            buffer.text.replace_line(lnum, text.clone());
         }
         Ok(())
     }
 
     fn line_count(&mut self) -> VimResult<i64> {
-        Ok(self.editor.line_count() as i64)
+        // Vim always reports at least one (empty) line.
+        Ok(self.editor.line_count().max(1) as i64)
     }
 
     fn current_line(&mut self) -> VimResult<i64> {
@@ -3669,4 +3713,89 @@ fn loclist_number_arg(args: &[Value]) -> i64 {
         return 0;
     }
     value.echo_string().parse::<i64>().unwrap_or(0)
+}
+
+impl EditorVimHost<'_> {
+    /// Build a namespace dictionary for a legacy :import.  Exported Vim9
+    /// functions become no-op stubs (marked funcrefs) because cross-engine
+    /// calls into compiled Vim9 functions are a later phase.
+    fn vim9_stub_namespace(&mut self, path: &str, autoload: bool) -> Option<Value> {
+        let mut candidates = Vec::new();
+        for entry in self.editor.runtime.expanded_runtimepath() {
+            candidates.push(
+                entry
+                    .join(if autoload { "autoload" } else { "import" })
+                    .join(path),
+            );
+        }
+        if let Some(runtime) = self.editor.runtime.vimruntime() {
+            candidates.push(
+                runtime
+                    .join(if autoload { "autoload" } else { "import" })
+                    .join(path),
+            );
+            candidates.push(runtime.join(path));
+        }
+        let file = candidates
+            .into_iter()
+            .find(|candidate| candidate.is_file())?;
+        let source = std::fs::read(&file).ok()?;
+        let script = rvim_viml::vim9::parser::parse_script(&source).ok()?;
+        let mut dict = VimDict::new();
+        for statement in &script.items {
+            let item = match statement {
+                rvim_viml::vim9::ast::Stmt::Export(export) => export.item.as_ref(),
+                other => other,
+            };
+            if let rvim_viml::vim9::ast::Stmt::Def(def) = item {
+                let name = def.name.to_string_lossy().into_owned();
+                let marker = format!("\u{1}vim9stub:{name}");
+                let data = rvim_viml::value::FuncrefData::new(
+                    marker,
+                    rvim_viml::value::FuncrefKind::User,
+                    ScriptId::default(),
+                );
+                dict.set(
+                    rvim_viml::VimString::from(name),
+                    rvim_viml::Value::funcref(data),
+                );
+            }
+        }
+        Some(rvim_viml::Value::dict(dict))
+    }
+}
+
+impl Vim9Host for EditorVimHost<'_> {
+    fn execute_ex_command(&mut self, command: &str, runtime: &mut VimRuntime) -> VimResult<Value> {
+        let previous = std::mem::take(runtime);
+        let installed = std::mem::replace(&mut self.editor.viml, previous);
+        let result = crate::ex::execute(self.editor, command);
+        *runtime = std::mem::replace(&mut self.editor.viml, installed);
+        result?;
+        Ok(Value::Number(0))
+    }
+
+    fn external_command(&mut self, name: &str) -> bool {
+        matches!(name, "set" | "setlocal" | "normal" | "normal!")
+    }
+
+    fn echo(&mut self, text: &str) {
+        self.editor.messages.echomsg(text);
+    }
+
+    fn execute_legacy(&mut self, source: &[u8], runtime: &mut VimRuntime) -> VimResult<()> {
+        rvim_viml::execute_script(source, "[vim9:legacy]", runtime, self)
+    }
+
+    fn import_roots(&self, autoload: bool) -> Vec<std::path::PathBuf> {
+        let mut roots = Vec::new();
+        for entry in self.editor.runtime.expanded_runtimepath() {
+            roots.push(entry.join(if autoload { "autoload" } else { "import" }));
+        }
+        if let Some(runtime) = self.editor.runtime.vimruntime() {
+            roots.push(runtime.join(if autoload { "autoload" } else { "import" }));
+            roots.push(runtime.to_path_buf());
+        }
+        roots
+    }
 }

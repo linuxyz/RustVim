@@ -2472,7 +2472,7 @@ fn getline(ctx: &mut Ctx, args: &[Value]) -> Result<Value> {
     if end < start {
         return Ok(Value::list(Vec::new()));
     }
-    if end == start {
+    if end == start && args.len() < 2 {
         return Ok(Value::String(ctx.host.get_line(start)?));
     }
     let mut lines = Vec::new();

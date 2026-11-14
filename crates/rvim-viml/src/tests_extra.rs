@@ -538,10 +538,10 @@ fn nested_execute_capture() {
 }
 
 #[test]
-fn vim9_syntax_is_rejected() {
+fn vim9_script_header_is_rejected_by_the_legacy_engine() {
+    // The editor script loader routes real Vim9 files to the Vim9 evaluator
+    // before they reach this engine; a bare header must still be reported.
     let error = fail("vim9script\n");
-    assert!(error.to_string().contains("Vim9"));
-    let error = fail("def Foo()\nenddef\n");
     assert!(error.to_string().contains("Vim9"));
 }
 

@@ -190,16 +190,18 @@ Implemented and exercised by tests:
 
 Explicit exclusions and documented approximations (not open P1 work):
 
-- Vim9-script runtime files still report `E319` at runtime (the editor-side
-  script-loader integration is the remaining Phase 3 work), but the Vim9
-  front end and evaluator have landed under `crates/rvim-viml/src/vim9/`:
-  lexer, AST and parser parse the corpus and all 65 real Vim9 files of the
-  pinned runtime, and the evaluator passes every oracle-checked differential
-  corpus case byte for byte against Vim (26 passed, 0 failed; p27 is
-  no-oracle).  Classes, interfaces, enums and imports are supported by the
-  evaluator.  See [VIM9-PLAN.md](VIM9-PLAN.md); `compiler/context.vim` and the
-  newer syntax files (2html, context, csv, hare, help, hlsl, java, tsv, ...)
-  stay in the gap list until the loader runs them through the editor.
+- Vim9-script is runtime-grade: `has('vim9script')` is 1 and the editor
+  script loader runs Vim9 files (including vim9-mix preambles) through the
+  lexer/parser/evaluator in `crates/rvim-viml/src/vim9/`, with Ex command
+  dispatch, imports/exports, classes, interfaces, enums and autoload.  The 19
+  Tier C Vim9 checks and `compiler/context.vim` pass; the compatibility matrix
+  is A 14/14, B 48/48, C 789/790 (only the environment-dependent
+  `syntax/glimmer.vim` artefact remains) and the Vim9 differential corpus
+  passes 26/26 oracle-checked cases (p27 is no-oracle).  Documented limits:
+  no strict static type checker, legacy `:import` of Vim9 binds no-op stubs,
+  mixed-mode `:def` blocks in legacy scripts are skipped, and Vim9 callables
+  defined by a legacy-sourced script are not retained for later calls.  See
+  [VIM9-PLAN.md](VIM9-PLAN.md) and [EXCLUSIONS.md](EXCLUSIONS.md).
 - `syntax/glimmer.vim` only loads after a JavaScript/TypeScript syntax file has
   set `b:current_syntax`; sourcing it standalone fails in Vim too, so the
   Tier C check is environment dependent rather than an RVim gap.
