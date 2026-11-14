@@ -3787,6 +3787,15 @@ impl Vim9Host for EditorVimHost<'_> {
         rvim_viml::execute_script(source, "[vim9:legacy]", runtime, self)
     }
 
+    fn call_legacy_function(
+        &mut self,
+        name: &str,
+        args: Vec<Value>,
+        runtime: &mut VimRuntime,
+    ) -> VimResult<Value> {
+        rvim_viml::eval::call_function(name, args, runtime, self)
+    }
+
     fn import_roots(&self, autoload: bool) -> Vec<std::path::PathBuf> {
         let mut roots = Vec::new();
         for entry in self.editor.runtime.expanded_runtimepath() {

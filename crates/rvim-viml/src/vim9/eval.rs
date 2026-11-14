@@ -72,6 +72,21 @@ pub trait Vim9Host: VimHost {
         ))
     }
 
+    /// Call a legacy Vim function/builtin from Vim9.  Implemented per host so
+    /// the legacy evaluator receives a concrete host (trait upcasting from
+    /// Vim9Host to VimHost needs a newer compiler than the project MSRV).
+    fn call_legacy_function(
+        &mut self,
+        name: &str,
+        _args: Vec<Value>,
+        _runtime: &mut VimRuntime,
+    ) -> Result<Value> {
+        Err(VimError::new(
+            117,
+            format!("E117: Unknown function: {name}"),
+        ))
+    }
+
     /// Handle :normal for the minimal standalone host.
     fn run_normal(&mut self, _keys: &str, _cursor: &mut usize) -> Result<()> {
         Err(VimError::new(319, "normal is not supported by this host"))
@@ -87,6 +102,15 @@ impl Vim9Host for BasicHost {
     fn run_normal(&mut self, keys: &str, cursor: &mut usize) -> Result<()> {
         basic_normal(self, keys, cursor);
         Ok(())
+    }
+
+    fn call_legacy_function(
+        &mut self,
+        name: &str,
+        args: Vec<Value>,
+        runtime: &mut VimRuntime,
+    ) -> Result<Value> {
+        crate::eval::call_function(name, args, runtime, self)
     }
 }
 
@@ -1665,7 +1689,7 @@ impl<'h> Interpreter<'h> {
 
     fn call_builtin_legacy(&mut self, name: &str, args: Vec<Value9>) -> Result<Value9> {
         let legacy: Vec<Value> = args.iter().map(Value9::legacy).collect();
-        let value = crate::eval::call_function(name, legacy, self.runtime, self.host)?;
+        let value = self.host.call_legacy_function(name, legacy, self.runtime)?;
         Ok(Value9::Val(value))
     }
 
