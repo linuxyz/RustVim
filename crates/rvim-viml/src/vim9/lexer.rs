@@ -420,9 +420,22 @@ impl<'a> Lexer<'a> {
         space_before: bool,
     ) -> Result<Token> {
         self.advance_by(len);
-        if matches!(self.peek(0), Some(b'#') | Some(b'?')) {
+        let mut suffix = None;
+        if let Some(byte @ (b'#' | b'?')) = self.peek(0) {
             self.advance();
+            suffix = Some(byte);
         }
+        let kind = if suffix == Some(b'?') {
+            match kind {
+                Punct::EqEq => Punct::EqEqIgnoreCase,
+                Punct::NotEq => Punct::NotEqIgnoreCase,
+                Punct::Match => Punct::MatchIgnoreCase,
+                Punct::NotMatch => Punct::NotMatchIgnoreCase,
+                other => other,
+            }
+        } else {
+            kind
+        };
         Ok(self.make_token(TokenKind::Punct(kind), start, line, col, space_before))
     }
 

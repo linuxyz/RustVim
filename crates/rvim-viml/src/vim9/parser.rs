@@ -910,8 +910,8 @@ impl<'a> Parser<'a> {
     /// patterns, which are regexes, not Vim9 expressions).
     fn capture_rest_of_line(&mut self) -> Result<VimString> {
         let line = self.tok.line;
-        let (start, end, next) = line_bounds(self.source, self.tok.start);
-        let mut begin = start;
+        let (_, end, next) = line_bounds(self.source, self.tok.start);
+        let mut begin = self.tok.start;
         while begin < end && matches!(self.source[begin], b' ' | b'\t') {
             begin += 1;
         }
@@ -1607,12 +1607,36 @@ impl<'a> Parser<'a> {
             {
                 break;
             }
+            // Explicit generic type arguments: Name<T, U>(args).
+            if self.tok.kind.is_punct(Punct::Lt)
+                && !self.tok.space_before
+                && self.generic_call_ahead()?
+            {
+                self.bump()?; // '<'
+                let mut type_args = Vec::new();
+                loop {
+                    type_args.push(self.parse_type()?);
+                    if self.eat_punct(Punct::Comma)? {
+                        continue;
+                    }
+                    break;
+                }
+                self.expect_punct(Punct::Gt, codes::E488, "Missing >")?;
+                let args = self.parse_call_args()?;
+                expr = Expr::Call {
+                    callee: Box::new(expr),
+                    args,
+                    type_args,
+                };
+                continue;
+            }
             match self.tok.kind {
                 TokenKind::Punct(Punct::LParen) => {
                     let args = self.parse_call_args()?;
                     expr = Expr::Call {
                         callee: Box::new(expr),
                         args,
+                        type_args: Vec::new(),
                     };
                 }
                 TokenKind::Punct(Punct::LBracket) => {
@@ -1857,6 +1881,32 @@ impl<'a> Parser<'a> {
         }
     }
 
+    /// True when the current "&lt;" starts explicit generic type arguments
+    /// directly followed by a call: "First&lt;number&gt;(...)".
+    fn generic_call_ahead(&mut self) -> Result<bool> {
+        let mut depth = 0i32;
+        let mut index = 1usize;
+        loop {
+            let token = self.peek_nth(index)?;
+            match token.kind {
+                TokenKind::Punct(Punct::Lt) => depth += 1,
+                TokenKind::Punct(Punct::Gt) => {
+                    if depth == 0 {
+                        let after = self.peek_nth(index + 1)?;
+                        return Ok(after.kind.is_punct(Punct::LParen));
+                    }
+                    depth -= 1;
+                }
+                TokenKind::Newline | TokenKind::Eof => return Ok(false),
+                _ => {}
+            }
+            index += 1;
+            if index > 512 {
+                return Ok(false);
+            }
+        }
+    }
+
     /// True when the current "(" starts a lambda parameter list, i.e. after
     /// the matching ")" comes "=&gt;" or ": {type} =&gt;".
     fn lambda_ahead(&mut self) -> Result<bool> {
@@ -2073,6 +2123,10 @@ fn binary_op_of(kind: &TokenKind) -> Option<(BinaryOp, u8)> {
         TokenKind::Punct(Punct::Le) => (BinaryOp::Le, 3),
         TokenKind::Punct(Punct::Match) => (BinaryOp::Match, 3),
         TokenKind::Punct(Punct::NotMatch) => (BinaryOp::NotMatch, 3),
+        TokenKind::Punct(Punct::EqEqIgnoreCase) => (BinaryOp::EqIgnoreCase, 3),
+        TokenKind::Punct(Punct::NotEqIgnoreCase) => (BinaryOp::NeIgnoreCase, 3),
+        TokenKind::Punct(Punct::MatchIgnoreCase) => (BinaryOp::MatchIgnoreCase, 3),
+        TokenKind::Punct(Punct::NotMatchIgnoreCase) => (BinaryOp::NotMatchIgnoreCase, 3),
         TokenKind::Ident(name) if name.as_bytes() == b"is" => (BinaryOp::Is, 3),
         TokenKind::Ident(name) if name.as_bytes() == b"isnot" => (BinaryOp::IsNot, 3),
         TokenKind::Punct(Punct::DotDot) => (BinaryOp::Concat, 4),

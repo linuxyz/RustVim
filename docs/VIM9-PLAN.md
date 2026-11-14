@@ -1,6 +1,6 @@
 # Vim9 script implementation plan
 
-Status: **Phase 0/1 started**.  Target: runtime-grade Vim9 (see "Goal" below).
+Status: **Phase 0/1 complete; Phase 2 (evaluator) in progress**.  Target: runtime-grade Vim9 (see "Goal" below).
 Owner: lead agent; work is split into stages with hard gates.  Budget: ~100M
 model tokens total, with a stop-loss rule per phase.
 
@@ -72,8 +72,10 @@ profiling, Vim9 debugger support, bytecode-level performance parity.
         parser.rs     recursive-descent parser (line-oriented; Ex command
                       lines are captured verbatim instead of being tokenized)
         error.rs      Vim9 error helpers and E-codes
-        check.rs      static checks and type inference        (Phase 2)
-        eval.rs       evaluator                              (Phase 2)
+        value9.rs     Vim9 values (legacy Value + tuples), formatting
+        eval.rs       AST evaluator, builtin dispatch, commands
+        eval_helpers.rs  free helper functions used by the evaluator
+        check.rs      static checks and type inference        (Phase 5)
         class.rs      classes/interfaces/enums               (Phase 4)
         import.rs     import/export and script namespaces    (Phase 3)
         tests_*.rs    unit tests per layer
@@ -87,7 +89,7 @@ command dispatcher.
 Token budgets are estimates for this project (dense compiler work, including
 tests and debugging); they sum to ~58-93M for target B.
 
-### Phase 0 - design, skeleton, harness (3-6M) [in progress]
+### Phase 0 - design, skeleton, harness (3-6M) [complete]
 - docs/VIM9-PLAN.md (this file).
 - token.rs / ast.rs / error.rs / module skeleton committed.
 - tools/vim9_diff.py: "parse" gate, "oracle" capture with real Vim,
@@ -95,7 +97,7 @@ tests and debugging); they sum to ~58-93M for target B.
 - Gate: harness runs; corpus check/oracle modes pass; skeleton compiles with
   fmt/clippy clean; legacy tests unaffected.
 
-### Phase 1 - lexer and parser (12-20M) [in progress]
+### Phase 1 - lexer and parser (12-20M) [complete]
 - Complete Vim9 lexer: numbers/floats/blobs, strings and $"" interpolation,
   heredocs, comments, scoped vars/options/env/registers, operators,
   autoload names, line continuation tokens.
@@ -109,7 +111,7 @@ tests and debugging); they sum to ~58-93M for target B.
   error); Vim-valid files in the corpus also parse; unit tests cover each
   construct class; fmt/clippy/test clean; matrix unchanged (feature still 0).
 
-### Phase 2 - checks and evaluator (25-35M)
+### Phase 2 - checks and evaluator (25-35M) [in progress]
 - Variable scopes and immutability (final/const, script-local locking),
   function calls (Vim9 def, legacy function, builtin, funcref/partial),
   closures incl. nested def capture, list/dict/tuple values, string
@@ -122,6 +124,10 @@ tests and debugging); they sum to ~58-93M for target B.
 - Gate: corpus executes with outputs equal to the Vim oracle (diff mode);
   Vim's own test_vim9_*.vim subset has a documented pass rate and no panics;
   legacy suite green; matrix unchanged.
+  Phase 2 scope note: the base language corpus (p01-p16, p21, p24, p25) is the
+  gate for this phase.  The class/enum/import cases (p17-p20, p22, p23, p26)
+  need Phase 3/4 and are reported SKIP by the diff harness until then; they
+  must never be counted as PASS early.
 
 ### Phase 3 - script loader, import/export, autoload (8-12M)
 - "vim9script" header handling in the script loader, script namespaces,
@@ -224,3 +230,19 @@ tests and debugging); they sum to ~58-93M for target B.
     backslash/bar continuations.
   - Gates: 615 workspace tests, fmt/clippy/rustdoc clean; runtime compatibility
     matrix unchanged (the feature flag is still 0; evaluation is next).
+- 2026-11-15: Phase 2 evaluator landed for the base language.
+  - crates/rvim-viml/src/vim9/value9.rs (legacy Value + tuples and Vim9
+    formatting), eval.rs (scopes, closures, def/lambda calls, control flow,
+    try/catch/finally, Vim9 operators, builtin dispatch, higher order builtins
+    map/mapnew/filter/reduce/foreach/any/all/sort with closures, command
+    execution for echo/echomsg/execute/set/normal!/call, heredoc trim+eval).
+  - Call-site generic arguments (First<number>(...)) are parsed; ==?/!=?/=~?/!~?
+    case-insensitive comparators implemented.
+  - tools/vim9_diff.py diff mode runs crates/rvim-viml/examples/vim9_run.rs
+    and compares expected/*.out byte for byte.  Result now: 19 passed,
+    0 failed, 8 skipped (7 later-phase class/import/enum cases, 1 no-oracle).
+  - Evaluator unit tests cover formatting, operators, closures, higher order
+    builtins, destructuring, try/catch, heredocs, generic calls, Ex commands
+    and const locking.
+  - Still deliberately permissive: no Vim9 static type checker yet; that moves
+    to Phase 5 hardening (documented approximation).

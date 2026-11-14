@@ -8,9 +8,15 @@
 
 pub mod ast;
 pub mod error;
+pub mod eval;
+pub mod eval_helpers;
 pub mod lexer;
 pub mod parser;
 pub mod token;
+pub mod value9;
+
+#[cfg(test)]
+mod tests_eval;
 
 #[cfg(test)]
 mod tests_lexer;

@@ -376,6 +376,12 @@ pub enum BinaryOp {
     Le,
     Match,
     NotMatch,
+    /// "==?" and "!=?" compare strings ignoring case.
+    EqIgnoreCase,
+    NeIgnoreCase,
+    /// "=~?" and "!~?" match with 'ignorecase'.
+    MatchIgnoreCase,
+    NotMatchIgnoreCase,
     Is,
     IsNot,
     In,
@@ -456,6 +462,8 @@ pub enum Expr {
     Call {
         callee: Box<Expr>,
         args: Vec<Expr>,
+        /// Explicit generic type arguments: "First&lt;number&gt;(...)".
+        type_args: Vec<TypeExpr>,
     },
     /// receiver-&gt;callee(args); callee is usually a name but can be any
     /// expression in parentheses.

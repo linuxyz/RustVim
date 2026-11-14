@@ -68,6 +68,11 @@ pub enum Punct {
     Match,
     /// "!~"
     NotMatch,
+    /// "==?" (case insensitive equality)
+    EqEqIgnoreCase,
+    NotEqIgnoreCase,
+    MatchIgnoreCase,
+    NotMatchIgnoreCase,
     Bang,
     Question,
     /// Falsy operator "??".

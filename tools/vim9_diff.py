@@ -616,25 +616,13 @@ def describe_difference(recorded: str, actual: str) -> str:
 
 
 def cmd_diff(args: argparse.Namespace) -> int:
-    """Phase 2 stub.
+    """Run the Vim9 corpus through the RVim evaluator and compare with Vim.
 
-    Plumbing is in place: every oracle-checkable positive case is discovered,
-    its '# vim9-corpus-no-oracle' marker is honoured, and its recorded
-    expected/<name>.out is loaded.  Executing Vim9 with RVim is not
-    implemented yet, so the command reports that honestly and exits 2 - it
-    must never pass by pretending to have compared anything.
-
-    TODO(phase2): this is the intended per-case execution path, once RVim can
-    run Vim9 script::
-
-        completed = subprocess.run(
-            [rvim, "--headless", "-u", "NONE",
-             "-c", f"source {case.path}", "-c", "qa!"],
-            capture_output=True, text=True, timeout=timeout,
-        )
-        # RVim's :echomsg capture needs to match the oracle layout, then
-        # compare the resulting text with expected/<stem>.out byte for byte.
-
+    The runner is crates/rvim-viml/examples/vim9_run.rs.  It prints one
+    :echo/:echomsg message per line, matching the oracle's :redir capture.
+    Cases that fail with the documented "not implemented yet (planned
+    Phase 3/4)" error (classes, interfaces, enums, imports) are reported as
+    SKIP, never as PASS, until those phases land.
     """
     corpus = Path(args.corpus)
     cases = [case for case in discover_cases(corpus) if case.kind == "positive"]
@@ -644,47 +632,116 @@ def cmd_diff(args: argparse.Namespace) -> int:
         print(f"diff: no positive cases found under {corpus}", file=sys.stderr)
         return 2
     expected_dir = corpus / "expected"
+    runner = Path(args.runner)
+    if not runner.is_file():
+        print("diff: building the Vim9 runner (cargo build -p rvim-viml --example vim9_run)")
+        completed = subprocess.run(
+            ["cargo", "build", "-q", "-p", "rvim-viml", "--example", "vim9_run"],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            timeout=300,
+        )
+        if completed.returncode != 0:
+            print("diff: could not build the Vim9 runner:", file=sys.stderr)
+            print(completed.stdout + completed.stderr, file=sys.stderr)
+            return 2
+    if not runner.is_file():
+        print(
+            f"diff: Vim9 runner not found ({runner}); build it with "
+            "'cargo build -p rvim-viml --example vim9_run'",
+            file=sys.stderr,
+        )
+        return 2
     print("diff: compare RVim Vim9 execution against expected/*.out")
     print(f"corpus: {corpus}")
-    print(f"rvim:   {args.rvim}")
-    if resolve_executable(args.rvim) is None:
-        print(f"diff: note: RVim binary not found ({args.rvim}); build it with 'cargo build -p rvim-cli'")
-    if resolve_executable(args.vim) is None:
-        print(f"diff: note: oracle Vim not found ({args.vim}); expectations cannot be refreshed")
-
-    oracle_cases = [case for case in cases if not case.no_oracle]
-    total_bytes = 0
-    missing_expected: list[str] = []
+    print(f"runner: {runner}")
     print()
     print(f"{'case':<38} {'expected':<10} status")
     print("-" * 70)
+    passed = 0
+    failed = 0
+    skipped = 0
+    missing_expected: list[str] = []
+    failures: list[str] = []
+    records: list[dict] = []
     for case in cases:
         if case.no_oracle:
+            skipped += 1
             print(f"{case.name:<38} {'-':<10} SKIP (no-oracle)")
+            records.append({"case": case.name, "status": "skip", "detail": "no-oracle"})
             continue
         expected_path = expected_dir / (case.stem + ".out")
         if not expected_path.is_file():
             missing_expected.append(case.name)
+            failed += 1
+            failures.append(case.name)
             print(f"{case.name:<38} {'missing':<10} FAIL (no recorded output)")
+            records.append({"case": case.name, "status": "fail", "detail": "missing expected"})
             continue
-        size = len(expected_path.read_bytes())
-        total_bytes += size
-        print(f"{case.name:<38} {size:<10} TODO (Phase 2)")
-
+        try:
+            expected = expected_path.read_bytes().decode("utf-8", errors="replace")
+            size = len(expected.encode("utf-8"))
+            completed = subprocess.run(
+                [str(runner), str(case.path)],
+                capture_output=True,
+                text=True,
+                timeout=args.timeout,
+            )
+        except subprocess.TimeoutExpired:
+            failed += 1
+            failures.append(case.name)
+            print(f"{case.name:<38} {'-':<10} FAIL (timeout)")
+            records.append({"case": case.name, "status": "fail", "detail": "timeout"})
+            continue
+        actual = completed.stdout
+        if completed.returncode != 0:
+            error = (completed.stderr or actual).strip()
+            if "not implemented yet (planned Phase 3/4)" in error:
+                skipped += 1
+                print(f"{case.name:<38} {size:<10} SKIP (later phase)")
+                records.append({"case": case.name, "status": "skip", "detail": error})
+                continue
+            failed += 1
+            failures.append(case.name)
+            detail = error.splitlines()[0] if error else f"exit {completed.returncode}"
+            print(f"{case.name:<38} {size:<10} FAIL ({detail[:50]})")
+            records.append({"case": case.name, "status": "fail", "detail": error})
+            continue
+        if actual == expected:
+            passed += 1
+            print(f"{case.name:<38} {size:<10} PASS")
+            records.append({"case": case.name, "status": "pass"})
+        else:
+            failed += 1
+            failures.append(case.name)
+            detail = describe_difference(expected, actual)
+            print(f"{case.name:<38} {size:<10} FAIL")
+            print(indent_text(detail, 4))
+            records.append({"case": case.name, "status": "fail", "detail": detail})
     print()
-    if missing_expected:
-        print(
-            "diff: expected output missing for: " + ", ".join(missing_expected)
-            + "\n      run 'python3 tools/vim9_diff.py oracle' first",
-            file=sys.stderr,
-        )
     print(
-        "diff not implemented yet (Phase 2): RVim has no Vim9 execution path.\n"
-        f"Plumbing loaded {len(oracle_cases) - len(missing_expected)}/{len(oracle_cases)} "
-        f"cases ({total_bytes} expected bytes); no output was compared and nothing passed.\n"
-        "TODO: implement cmd_diff() in tools/vim9_diff.py once RVim can source Vim9 files."
+        f"diff: {passed} passed, {failed} failed, {skipped} skipped "
+        f"({len(cases)} positive cases)"
     )
-    return 2
+    if failures:
+        print("diff: failed cases: " + ", ".join(failures), file=sys.stderr)
+    if args.json:
+        write_json(
+            args.json,
+            {
+                "command": "diff",
+                "runner": str(runner),
+                "passed": passed,
+                "failed": failed,
+                "skipped": skipped,
+                "failures": failures,
+                "missing_expected": missing_expected,
+                "cases": records,
+            },
+        )
+        print(f"diff: wrote {args.json}")
+    return 1 if failed else 0
 
 
 # ---------------------------------------------------------------------------
@@ -925,12 +982,16 @@ def build_parser() -> argparse.ArgumentParser:
     oracle.add_argument("--json", default=None, help="write results as JSON to this path")
     oracle.set_defaults(func=cmd_oracle)
 
-    diff = subparsers.add_parser("diff", help="compare RVim output with expected/ (Phase 2 stub)")
+    diff = subparsers.add_parser("diff", help="compare the RVim Vim9 runner with expected/ output")
     add_common(diff)
     diff.add_argument("--filter", default=None, help="only handle cases whose name contains this text")
-    diff.add_argument("--rvim", default=str(DEFAULT_RVIM), help="RVim binary (default: target/debug/rvim)")
-    diff.add_argument("--vim", default="vim", help="Vim executable used to refresh expectations")
+    diff.add_argument(
+        "--runner",
+        default=str(ROOT / "target" / "debug" / "examples" / "vim9_run"),
+        help="Vim9 runner binary (default: target/debug/examples/vim9_run)",
+    )
     diff.add_argument("--timeout", type=float, default=30.0, help="per-case timeout in seconds")
+    diff.add_argument("--json", default=None, help="write results as JSON to this path")
     diff.set_defaults(func=cmd_diff)
 
     check = subparsers.add_parser("check-corpus", help="validate corpus hygiene")

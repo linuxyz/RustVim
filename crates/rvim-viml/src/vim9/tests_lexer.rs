@@ -224,7 +224,7 @@ fn operators_longest_match() {
         ("=>", Punct::FatArrow),
         ("==", Punct::EqEq),
         ("==#", Punct::EqEq),
-        ("==?", Punct::EqEq),
+        ("==?", Punct::EqEqIgnoreCase),
         ("!=", Punct::NotEq),
         (">=", Punct::Ge),
         ("<=", Punct::Le),

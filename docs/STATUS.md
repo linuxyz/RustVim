@@ -56,7 +56,7 @@ used by the golden-frame tests. VIMRUNTIME may point at an unpacked Vim
 | INS-01 insert/append/open | done | insert, append, open line, replace-char |
 | EX-01 Ex parser | done | ranges, addresses, marks, search addresses, modifiers |
 | ENC-01 UTF-8 internal model | done | byte strings, Unicode width table |
-| TST-01 test harness | done | 615 workspace tests at last run |
+| TST-01 test harness | done | 627 workspace tests at last run |
 
 P0 is complete.  Options gated behind unimplemented features (GUI, terminal,
 spell, diff, sessions, Python/Ruby/etc.) are absent from `:set`, completion
@@ -190,13 +190,16 @@ Implemented and exercised by tests:
 
 Explicit exclusions and documented approximations (not open P1 work):
 
-- Vim9-script runtime files still report `E319` at runtime (evaluation is
-  not wired up yet), but the Vim9 front end has landed: lexer, AST and parser
-  under `crates/rvim-viml/src/vim9/` parse the corpus and all 65 real Vim9
-  files of the pinned runtime.  See [VIM9-PLAN.md](VIM9-PLAN.md) for the phase
-  plan; Phase 2 (type checks + evaluator) is next.  `compiler/context.vim`
-  and the newer syntax files (2html, context, csv, hare, help, hlsl, java,
-  tsv, ...) stay in the gap list until then.
+- Vim9-script runtime files still report `E319` at runtime (the script
+  loader integration is Phase 3), but the Vim9 front end and base-language
+  evaluator have landed under `crates/rvim-viml/src/vim9/`: lexer, AST and
+  parser parse the corpus and all 65 real Vim9 files of the pinned runtime,
+  and the evaluator passes the base-language differential corpus byte for
+  byte against Vim (19 passed, 0 failed; classes/interfaces/enums/imports are
+  Phase 3/4 and reported as SKIP).  See [VIM9-PLAN.md](VIM9-PLAN.md);
+  `compiler/context.vim` and the newer syntax files (2html, context, csv,
+  hare, help, hlsl, java, tsv, ...) stay in the gap list until the loader and
+  class phases land.
 - `syntax/glimmer.vim` only loads after a JavaScript/TypeScript syntax file has
   set `b:current_syntax`; sourcing it standalone fails in Vim too, so the
   Tier C check is environment dependent rather than an RVim gap.
@@ -306,17 +309,18 @@ cargo test --workspace
 cargo clippy --workspace --all-targets -- -D warnings
 ~~~
 
-At the time of writing the workspace has 615 tests and no clippy warnings.
+At the time of writing the workspace has 627 tests and no clippy warnings.
 The optional PTY smoke script is tools/pty_smoke.py; some sandboxes deny
 openpty, so it is not part of the required CI gate yet.
 
 ## Known intentional deviations
 
 - Terminal emulator, image API and GUI are out of scope.
-- Vim9 script is in progress: lexer/parser are implemented (Phase 1 of
-  [VIM9-PLAN.md](VIM9-PLAN.md)); evaluation, classes-as-values and the
-  `has('vim9script')` flip are later phases.  Until then Vim9 runtime files
-  report `E319`.
+- Vim9 script is in progress: lexer/parser (Phase 1) and the base-language
+  evaluator (Phase 2) are implemented, see [VIM9-PLAN.md](VIM9-PLAN.md).
+  Classes/interfaces/enums/imports (Phase 3/4), the script-loader integration
+  and the `has('vim9script')` flip are later phases.  Until then Vim9 runtime
+  files report `E319`.
 - Generated option defaults are parsed from the pinned source where possible;
   a handful of feature-dependent defaults are approximated.
 - The editor's internal text is UTF-8, but regex and buffer APIs remain
