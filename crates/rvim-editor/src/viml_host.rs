@@ -8,7 +8,7 @@ use rvim_viml::{
 
 use crate::editor::Editor;
 use crate::options::OptionValue;
-use rvim_types::BufPos;
+use rvim_types::{BufPos, WindowId};
 
 pub struct EditorVimHost<'a> {
     pub editor: &'a mut Editor,
@@ -28,6 +28,22 @@ impl<'a> EditorVimHost<'a> {
             _ => 0,
         };
         (scope, format!("{id}:{name}"))
+    }
+}
+
+impl EditorVimHost<'_> {
+    /// Resolve an optional window id used as the second argument of the fold
+    /// functions; None means the current window.
+    fn window_for_winid(&self, winid: Option<u64>) -> Option<WindowId> {
+        match winid {
+            Some(raw) => self
+                .editor
+                .view
+                .windows
+                .keys()
+                .find(|id| rvim_types::Id::raw(*id) == raw),
+            None => self.editor.view.current_window().map(|window| window.id),
+        }
     }
 }
 
@@ -2866,6 +2882,10 @@ impl VimHost for EditorVimHost<'_> {
                 self.editor.scheduler.stop_all();
                 Ok(Some(Value::Number(0)))
             }
+            "sign_define" | "sign_undefine" | "sign_getdefined" | "sign_place" | "sign_unplace"
+            | "sign_getplaced" | "sign_jump" | "sign_placelist" | "sign_unplacelist" => {
+                Ok(Some(self.editor.sign_call_viml(name, args)?))
+            }
             _ => Ok(None),
         }
     }
@@ -3003,6 +3023,76 @@ impl VimHost for EditorVimHost<'_> {
             return Ok(id);
         }
         Ok(0)
+    }
+
+    fn indent(&mut self, lnum: i64) -> VimResult<i64> {
+        let Some(buffer) = self.editor.current_buffer() else {
+            return Ok(-1);
+        };
+        if lnum < 1 || lnum as u32 > buffer.text.line_count() {
+            return Ok(-1);
+        }
+        let line = buffer.text.line(lnum as u32).unwrap_or(b"");
+        let tabstop = self
+            .editor
+            .options
+            .buffer_number(self.editor.current_buffer_id(), "tabstop")
+            .max(1) as usize;
+        let indent = line
+            .iter()
+            .take_while(|byte| **byte == b' ' || **byte == b'\t')
+            .count();
+        Ok(rvim_types::unicode::display_width(&line[..indent], 0, tabstop) as i64)
+    }
+
+    fn fold_closed(&mut self, lnum: i64, winid: Option<u64>) -> VimResult<i64> {
+        let Some(window) = self.window_for_winid(winid) else {
+            return Ok(-1);
+        };
+        if lnum <= 0 {
+            return Ok(-1);
+        }
+        match self.editor.folded_at(window, lnum as u32) {
+            Some((start, _end)) => Ok(i64::from(start)),
+            None => Ok(-1),
+        }
+    }
+
+    fn fold_closed_end(&mut self, lnum: i64, winid: Option<u64>) -> VimResult<i64> {
+        let Some(window) = self.window_for_winid(winid) else {
+            return Ok(-1);
+        };
+        if lnum <= 0 {
+            return Ok(-1);
+        }
+        match self.editor.folded_at(window, lnum as u32) {
+            Some((_start, end)) => Ok(i64::from(end)),
+            None => Ok(-1),
+        }
+    }
+
+    fn fold_level(&mut self, lnum: i64, winid: Option<u64>) -> VimResult<i64> {
+        let Some(window) = self.window_for_winid(winid) else {
+            return Ok(0);
+        };
+        if lnum <= 0 {
+            return Ok(0);
+        }
+        Ok(i64::from(self.editor.fold_level_at(window, lnum as u32)))
+    }
+
+    fn fold_text(&mut self) -> VimResult<String> {
+        Ok(self.editor.current_foldtext_var())
+    }
+
+    fn fold_text_result(&mut self, lnum: i64, winid: Option<u64>) -> VimResult<String> {
+        let Some(window) = self.window_for_winid(winid) else {
+            return Ok(String::new());
+        };
+        if lnum <= 0 {
+            return Ok(String::new());
+        }
+        Ok(self.editor.fold_text_result(window, lnum as u32))
     }
 
     fn system_output(&mut self, command: &str) -> VimResult<Vec<u8>> {

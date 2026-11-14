@@ -4,6 +4,8 @@ use std::path::{Path, PathBuf};
 use rvim_text::{TextBuffer, UndoManager};
 use rvim_types::{BufPos, BufferId};
 
+use crate::signs::PlacedSign;
+
 #[derive(Clone, Debug)]
 pub struct BufferEntry {
     pub id: BufferId,
@@ -16,6 +18,12 @@ pub struct BufferEntry {
     pub undo: UndoManager,
     pub readonly: bool,
     pub buftype: String,
+    /// Signs placed in this buffer.
+    pub signs: Vec<PlacedSign>,
+    /// Next sign id assigned by `:sign place` when id 0 is used.
+    pub sign_next_id: i64,
+    /// Changedtick the sign line anchors were last reconciled with.
+    pub signs_tick: u64,
 }
 
 impl BufferEntry {
@@ -31,6 +39,9 @@ impl BufferEntry {
             undo: UndoManager::new(),
             readonly: false,
             buftype: String::new(),
+            signs: Vec::new(),
+            sign_next_id: 1,
+            signs_tick: 0,
         }
     }
 

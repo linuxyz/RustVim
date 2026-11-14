@@ -49,6 +49,35 @@ impl HighlightTable {
             },
         );
         groups.insert(
+            "Folded".to_string(),
+            Attr {
+                flags: AttrFlags::REVERSE,
+                ..Attr::DEFAULT
+            },
+        );
+        groups.insert(
+            "FoldColumn".to_string(),
+            Attr {
+                fg: Color::Indexed(6),
+                ..Attr::DEFAULT
+            },
+        );
+        groups.insert(
+            "SignColumn".to_string(),
+            Attr {
+                fg: Color::Indexed(6),
+                ..Attr::DEFAULT
+            },
+        );
+        groups.insert(
+            "CursorLineFold".to_string(),
+            Attr {
+                flags: AttrFlags::REVERSE,
+                ..Attr::DEFAULT
+            },
+        );
+        groups.insert("CursorLineSign".to_string(), Attr::DEFAULT);
+        groups.insert(
             "NonText".to_string(),
             Attr {
                 fg: Color::Indexed(12),

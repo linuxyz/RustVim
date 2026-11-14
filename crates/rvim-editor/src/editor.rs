@@ -36,6 +36,8 @@ pub enum Operator {
     Indent,
     Unindent,
     Filter,
+    /// zf: create a fold over the motion.
+    Fold,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -320,6 +322,7 @@ pub struct Editor {
     pub pending_g: bool,
     pub pending_ctrl_w: bool,
     pub pending_z: bool,
+    pub pending_bracket: Option<char>,
     pub pending_char: Option<CharPending>,
     pub should_quit: bool,
     pub should_redraw: bool,
@@ -371,6 +374,12 @@ pub struct Editor {
     next_script_id: u64,
     pub cmdwin: Option<CmdwinState>,
     pub statusline_cache: HashMap<(WindowId, String, u64, u32, u32, String), String>,
+    /// Guard against re-entering fold computation from evaluated expressions.
+    pub folds_syncing: bool,
+    /// Sign type definitions (`:sign define`).
+    pub sign_defs: HashMap<String, crate::signs::SignDef>,
+    /// Bumped whenever signs or sign types change.
+    pub sign_version: u64,
     pub search_pattern: Option<String>,
     pub search_highlight_active: bool,
     pub search_origin: Option<BufPos>,
@@ -525,6 +534,7 @@ impl Editor {
             pending_g: false,
             pending_ctrl_w: false,
             pending_z: false,
+            pending_bracket: None,
             pending_char: None,
             should_quit: false,
             should_redraw: true,
@@ -567,6 +577,9 @@ impl Editor {
             next_script_id: 0,
             cmdwin: None,
             statusline_cache: HashMap::new(),
+            folds_syncing: false,
+            sign_defs: HashMap::new(),
+            sign_version: 0,
             search_pattern: None,
             search_highlight_active: false,
             search_origin: None,
@@ -687,6 +700,9 @@ impl Editor {
 
     pub fn set_cursor(&mut self, pos: BufPos) {
         let pos = self.clamp_cursor(pos);
+        // Vim never leaves the cursor on a line hidden by a closed fold.
+        let pos = self.fold_normalized(pos);
+        let pos = self.clamp_cursor(pos);
         if let Some(window) = self.view.current_window_mut() {
             window.set_cursor(pos);
             window.viewport.skipcol = 0;
@@ -780,6 +796,7 @@ impl Editor {
                 Operator::Indent => '>',
                 Operator::Unindent => '<',
                 Operator::Filter => '!',
+                Operator::Fold => 'f',
             });
         }
         if self.pending_g {
@@ -790,6 +807,9 @@ impl Editor {
         }
         if self.pending_z {
             out.push('z');
+        }
+        if let Some(bracket) = self.pending_bracket {
+            out.push(bracket);
         }
         if let Some(pending) = &self.pending_char {
             out.push(match pending {
@@ -1204,6 +1224,12 @@ impl Editor {
             self.handle_z_key(key);
             return;
         }
+        if let Some(bracket) = self.pending_bracket.take() {
+            if key.key == Key::Char('z') {
+                self.fold_jump(bracket == ']');
+            }
+            return;
+        }
         if self.pending_g {
             self.handle_g_key(key);
             return;
@@ -1255,6 +1281,8 @@ impl Editor {
                 '>' => self.pending_char = Some(CharPending::Shift { right: true }),
                 '<' => self.pending_char = Some(CharPending::Shift { right: false }),
                 'z' => self.pending_z = true,
+                '[' => self.pending_bracket = Some('['),
+                ']' => self.pending_bracket = Some(']'),
                 'H' => self.viewport_goto(0),
                 'M' => self.viewport_goto(1),
                 'L' => self.viewport_goto(2),
@@ -3791,6 +3819,52 @@ impl Editor {
                     }
                     return;
                 }
+                ActionKind::Fold => {
+                    let target_window = self
+                        .view
+                        .windows
+                        .iter()
+                        .find(|(_, window)| rvim_types::Id::raw(window.id) == region.action.id)
+                        .map(|(id, _)| id);
+                    if let Some(window) = target_window {
+                        self.view.set_current_window(window);
+                        self.current_buffer = self
+                            .view
+                            .current_window()
+                            .map(|window| window.buffer)
+                            .unwrap_or(self.current_buffer);
+                        self.sync_window_options();
+                    }
+                    if mouse.kind == MouseKind::Press {
+                        let lnum = region.action.index;
+                        self.fold_toggle(lnum);
+                    }
+                    self.request_redraw();
+                    return;
+                }
+                ActionKind::Sign => {
+                    let target_window = self
+                        .view
+                        .windows
+                        .iter()
+                        .find(|(_, window)| rvim_types::Id::raw(window.id) == region.action.id)
+                        .map(|(id, _)| id);
+                    if let Some(window) = target_window {
+                        self.view.set_current_window(window);
+                        self.current_buffer = self
+                            .view
+                            .current_window()
+                            .map(|window| window.buffer)
+                            .unwrap_or(self.current_buffer);
+                        self.sync_window_options();
+                    }
+                    if mouse.kind == MouseKind::Press {
+                        let lnum = region.action.index;
+                        self.set_cursor(BufPos::new(lnum.max(1), 0));
+                        self.request_redraw();
+                    }
+                    return;
+                }
                 _ => {}
             }
         }
@@ -4157,26 +4231,65 @@ impl Editor {
             .view
             .current_window()
             .map_or(1, |window| window.height.max(1));
+        match ch {
+            'z' => {
+                if let Some(window) = self.view.current_window_mut() {
+                    window.viewport.topline = cursor_line.saturating_sub(height as u32 / 2).max(1);
+                }
+            }
+            't' => {
+                if let Some(window) = self.view.current_window_mut() {
+                    window.viewport.topline = cursor_line;
+                }
+            }
+            'b' | '-' => {
+                if let Some(window) = self.view.current_window_mut() {
+                    window.viewport.topline = cursor_line
+                        .saturating_sub(height.saturating_sub(1) as u32)
+                        .max(1);
+                }
+            }
+            '.' => {
+                if let Some(window) = self.view.current_window_mut() {
+                    window.viewport.topline = cursor_line.saturating_sub(height as u32 / 2).max(1);
+                }
+            }
+            'o' => self.fold_open(cursor_line, false),
+            'O' => self.fold_open(cursor_line, true),
+            'c' => self.fold_close(cursor_line, false),
+            'C' => self.fold_close(cursor_line, true),
+            'a' => self.fold_toggle(cursor_line),
+            'R' => self.fold_open_all(),
+            'M' => self.fold_close_all(),
+            'r' => {
+                let count = self.pending_count.take().unwrap_or(1).max(1) as i64;
+                self.fold_reduce(count);
+            }
+            'm' => {
+                let count = self.pending_count.take().unwrap_or(1).max(1) as i64;
+                self.fold_more(count);
+            }
+            'j' => self.fold_jump(true),
+            'k' => self.fold_jump(false),
+            'd' => {
+                let _ = self.delete_fold(cursor_line, false);
+            }
+            'D' => {
+                let _ = self.delete_fold(cursor_line, true);
+            }
+            'E' => self.eliminate_folds(),
+            'i' => self.fold_toggle_enable(),
+            'n' => self.fold_set_enable(false),
+            'N' => self.fold_set_enable(true),
+            'f' => self.begin_operator(Operator::Fold),
+            'F' => self.begin_operator(Operator::Fold),
+            _ => {}
+        }
+        // Keep topline on a displayed line.
+        self.sync_folds();
         if let Some(window) = self.view.current_window_mut() {
-            match ch {
-                'z' => {
-                    window.viewport.topline = cursor_line.saturating_sub(height as u32 / 2).max(1);
-                }
-                't' => window.viewport.topline = cursor_line,
-                'b' => {
-                    window.viewport.topline = cursor_line
-                        .saturating_sub(height.saturating_sub(1) as u32)
-                        .max(1);
-                }
-                '.' => {
-                    window.viewport.topline = cursor_line.saturating_sub(height as u32 / 2).max(1);
-                }
-                '-' => {
-                    window.viewport.topline = cursor_line
-                        .saturating_sub(height.saturating_sub(1) as u32)
-                        .max(1);
-                }
-                _ => {}
+            if window.folds.is_hidden(window.viewport.topline) {
+                window.viewport.topline = window.folds.owner(window.viewport.topline).max(1);
             }
         }
         self.request_redraw();
@@ -4686,7 +4799,7 @@ impl Editor {
     }
 
     fn begin_operator(&mut self, op: Operator) {
-        if op != Operator::Yank && self.deny_modification() {
+        if !matches!(op, Operator::Yank | Operator::Fold) && self.deny_modification() {
             return;
         }
         let count = self.pending_count.take();
@@ -4699,17 +4812,21 @@ impl Editor {
         let count = self.take_count();
         self.goto_motion(motion);
         if count > 1 {
+            let vertical = matches!(motion, Motion::Down | Motion::Up);
+            let tabstop = self.options.get_number("tabstop") as usize;
             let mut pos = self.cursor();
-            let Some(buffer) = self.current_buffer() else {
-                return;
-            };
             for _ in 1..count {
-                let next = move_cursor(
-                    &buffer.text,
-                    pos,
-                    motion,
-                    self.options.get_number("tabstop") as usize,
-                );
+                let next = {
+                    let Some(buffer) = self.current_buffer() else {
+                        return;
+                    };
+                    move_cursor(&buffer.text, pos, motion, tabstop)
+                };
+                let next = if vertical {
+                    self.fold_adjust_vertical(pos, next)
+                } else {
+                    next
+                };
                 if next == pos {
                     break;
                 }
@@ -4720,16 +4837,20 @@ impl Editor {
         self.after_normal_key_ch(' ');
     }
 
-    fn goto_motion(&mut self, motion: Motion) {
+    pub(crate) fn goto_motion(&mut self, motion: Motion) {
         let Some(buffer) = self.current_buffer() else {
             return;
         };
-        let pos = move_cursor(
+        let start = self.cursor();
+        let mut pos = move_cursor(
             &buffer.text,
-            self.cursor(),
+            start,
             motion,
             self.options.get_number("tabstop") as usize,
         );
+        if matches!(motion, Motion::Down | Motion::Up) {
+            pos = self.fold_adjust_vertical(start, pos);
+        }
         self.set_cursor(pos);
         self.request_redraw();
     }
@@ -4888,10 +5009,7 @@ impl Editor {
                             window.viewport.skipcol = *next as u32;
                         }
                     } else if topline < max_top {
-                        if let Some(window) = self.view.current_window_mut() {
-                            window.viewport.topline += 1;
-                            window.viewport.skipcol = 0;
-                        }
+                        self.fold_scroll_topline(true);
                     }
                 } else if index > 0 {
                     if let Some(window) = self.view.current_window_mut() {
@@ -4922,16 +5040,45 @@ impl Editor {
                             .unwrap_or(0) as u32;
                     }
                 }
-            } else if let Some(window) = self.view.current_window_mut() {
-                window.viewport.skipcol = 0;
-                if down {
-                    if window.viewport.topline < max_top {
-                        window.viewport.topline += 1;
-                    }
-                } else if window.viewport.topline > 1 {
-                    window.viewport.topline -= 1;
-                }
+            } else {
+                self.fold_scroll_topline(down);
+                let _ = max_top;
             }
+        }
+    }
+
+    /// Scroll the window one display line, skipping lines hidden by folds.
+    fn fold_scroll_topline(&mut self, down: bool) {
+        self.sync_folds();
+        let Some(window) = self.view.current_window() else {
+            return;
+        };
+        let folds = window.folds.clone();
+        let mut top = window.viewport.topline.max(1);
+        let line_count = self.line_count().max(1);
+        if down {
+            if top < line_count {
+                top += 1;
+            }
+        } else if top > 1 {
+            top -= 1;
+        }
+        if folds.is_hidden(top) && folds.owner(top) != top {
+            if down {
+                top = folds
+                    .hidden_end
+                    .get((top - 1) as usize)
+                    .copied()
+                    .unwrap_or(top)
+                    .saturating_add(1);
+            } else {
+                top = folds.owner(top).max(1);
+            }
+        }
+        top = top.clamp(1, line_count);
+        if let Some(window) = self.view.current_window_mut() {
+            window.viewport.topline = top;
+            window.viewport.skipcol = 0;
         }
     }
 
@@ -7808,7 +7955,7 @@ impl Editor {
         self.request_redraw();
     }
 
-    fn record_undo(&mut self) {
+    pub(crate) fn record_undo(&mut self) {
         let cursor = self.cursor();
         let Some(buffer) = self.current_buffer_mut() else {
             return;
@@ -7816,7 +7963,7 @@ impl Editor {
         buffer.undo.record(&buffer.text, cursor);
     }
 
-    fn commit_undo(&mut self) {
+    pub(crate) fn commit_undo(&mut self) {
         let cursor = self.cursor();
         let after_cursor = self.cursor();
         let Some(buffer) = self.current_buffer_mut() else {
@@ -7972,6 +8119,10 @@ impl Editor {
             })
             .collect();
         match op {
+            Operator::Fold => {
+                let _ = self.create_fold(range.start.lnum, range.end.lnum.max(range.start.lnum));
+                self.set_cursor(BufPos::new(range.start.lnum, 0));
+            }
             Operator::Yank => {
                 self.set_register(RegisterKind::Blockwise, lines, true);
                 self.set_cursor(range.start);
@@ -8595,6 +8746,30 @@ impl Editor {
             let winfixwidth = self
                 .options
                 .window_bool(rvim_types::Id::raw(id), "winfixwidth");
+            let fillchars = self
+                .options
+                .window_string(rvim_types::Id::raw(id), "fillchars");
+            let foldmethod = self
+                .options
+                .window_string(rvim_types::Id::raw(id), "foldmethod");
+            let foldmarker = self
+                .options
+                .window_string(rvim_types::Id::raw(id), "foldmarker");
+            let foldignore = self
+                .options
+                .window_string(rvim_types::Id::raw(id), "foldignore");
+            let foldminlines = self
+                .options
+                .window_number(rvim_types::Id::raw(id), "foldminlines");
+            let foldnestmax = self
+                .options
+                .window_number(rvim_types::Id::raw(id), "foldnestmax");
+            let foldtext = self
+                .options
+                .window_string(rvim_types::Id::raw(id), "foldtext");
+            let foldexpr = self
+                .options
+                .window_string(rvim_types::Id::raw(id), "foldexpr");
             let _ = sidescrolloff;
             if let Some(window) = self.view.window_mut(id) {
                 window.options.number = number;
@@ -8619,6 +8794,14 @@ impl Editor {
                 window.options.signcolumn = signcolumn.clone();
                 window.options.winfixheight = winfixheight;
                 window.options.winfixwidth = winfixwidth;
+                window.options.fillchars = fillchars;
+                window.options.foldmethod = foldmethod;
+                window.options.foldmarker = foldmarker;
+                window.options.foldignore = foldignore;
+                window.options.foldminlines = foldminlines;
+                window.options.foldnestmax = foldnestmax;
+                window.options.foldtext = foldtext;
+                window.options.foldexpr = foldexpr;
                 window.options.scrolloff = scrolloff;
                 window.options.sidescrolloff = sidescrolloff;
                 let wanted = if fixedheight {
@@ -8637,6 +8820,8 @@ impl Editor {
         } else {
             0
         };
+        self.sync_folds();
+        self.sync_signs();
     }
 
     fn next_boundary(&self, lnum: u32, col: u32) -> u32 {
@@ -8946,6 +9131,15 @@ impl Editor {
                 buffer_id,
                 window_id,
                 false,
+            );
+        }
+        // 'foldlevelstart' applies when a buffer is loaded.
+        let foldlevelstart = self.options.get_number("foldlevelstart");
+        if foldlevelstart >= 0 {
+            let _ = self.options.set_window(
+                window_id,
+                "foldlevel",
+                crate::options::OptionValue::Number(foldlevelstart),
             );
         }
         self.sync_window_options();

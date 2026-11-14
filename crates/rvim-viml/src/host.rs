@@ -189,6 +189,36 @@ pub trait VimHost {
         Ok(0)
     }
 
+    /// indent(): width in spaces of the leading white space of line `lnum`.
+    fn indent(&mut self, _lnum: i64) -> Result<i64> {
+        Ok(-1)
+    }
+
+    /// foldclosed()/foldclosedend(): start/end of the closed fold containing
+    /// `lnum` in window `winid` (the current window when None), or -1.
+    fn fold_closed(&mut self, _lnum: i64, _winid: Option<u64>) -> Result<i64> {
+        Ok(-1)
+    }
+
+    fn fold_closed_end(&mut self, _lnum: i64, _winid: Option<u64>) -> Result<i64> {
+        Ok(-1)
+    }
+
+    /// foldlevel(): fold level of `lnum` (0 when not in a fold).
+    fn fold_level(&mut self, _lnum: i64, _winid: Option<u64>) -> Result<i64> {
+        Ok(0)
+    }
+
+    /// foldtext(): default fold text for the v:fold* variables.
+    fn fold_text(&mut self) -> Result<String> {
+        Ok(String::new())
+    }
+
+    /// foldtextresult(): the fold text of the fold containing `lnum`.
+    fn fold_text_result(&mut self, _lnum: i64, _winid: Option<u64>) -> Result<String> {
+        Ok(String::new())
+    }
+
     /// Standard output of a shell command, used by `system()`/`systemlist()`.
     fn system_output(&mut self, _command: &str) -> Result<Vec<u8>> {
         Err(unsupported("system()"))

@@ -162,6 +162,8 @@ impl RenderHost for EditorHost<'_> {
 
 impl Editor {
     pub fn render(&mut self) -> Frame {
+        self.sync_folds();
+        self.sync_signs();
         self.update_window_buffer_public();
         self.sync_visual_selection_public();
         let command = match self.mode {

@@ -4758,15 +4758,25 @@ fn gutter_options_reserve_columns_and_render() {
         ed.view.current_window().unwrap().text_width(),
         base_width - 4
     );
-    let numberwidth = ed
-        .options
-        .window_number(ed.view.current_window().unwrap().id.raw(), "numberwidth")
-        .clamp(1, 20) as u16;
+    // Vim: "number" displays signs in the number column; without a number
+    // column it behaves like "auto", which reserves nothing without signs.
     ed.execute_ex("set signcolumn=number");
     assert_eq!(
         ed.view.current_window().unwrap().text_width(),
-        base_width - 2 - (numberwidth + 1)
+        base_width - 2
     );
+    ed.execute_ex("set number signcolumn=number");
+    assert_eq!(
+        ed.view.current_window().unwrap().text_width(),
+        base_width
+            - 2
+            - (ed
+                .options
+                .window_number(ed.view.current_window().unwrap().id.raw(), "numberwidth")
+                .clamp(1, 20) as u16
+                + 1)
+    );
+    ed.execute_ex("set nonumber");
     ed.execute_ex("set signcolumn=auto");
     assert_eq!(
         ed.view.current_window().unwrap().text_width(),

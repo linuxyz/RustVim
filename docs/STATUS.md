@@ -1,6 +1,7 @@
 # RVim implementation status
 
-**Scope:** P0 and P1 from [FEATURES.md](FEATURES.md) (177 catalog entries).
+**Scope:** P0 and P1 from [FEATURES.md](FEATURES.md) (177 catalog entries), plus
+the P2 folding (DSP-01/02/03) and signs (DSP-04) subsystems.
 **Target:** Vim 9.2.1338.
 **State:** working editor and test suite; P0 is complete, P1 is substantially
 implemented but not yet at the catalog's definition of done. Per-feature status
@@ -54,11 +55,11 @@ used by the golden-frame tests. VIMRUNTIME may point at an unpacked Vim
 | INS-01 insert/append/open | done | insert, append, open line, replace-char |
 | EX-01 Ex parser | done | ranges, addresses, marks, search addresses, modifiers |
 | ENC-01 UTF-8 internal model | done | byte strings, Unicode width table |
-| TST-01 test harness | done | 508 workspace tests at last run |
+| TST-01 test harness | done | 525 workspace tests at last run |
 
 P0 is complete.  Options gated behind unimplemented features (GUI, terminal,
-spell, folding, diff, sessions, Python/Ruby/etc.) are absent from `:set`,
-completion and `exists("+name")`, matching a Vim built without those features.
+spell, diff, sessions, Python/Ruby/etc.) are absent from `:set`, completion
+and `exists("+name")`, matching a Vim built without those features.
 
 ## P1 - daily driver
 
@@ -134,7 +135,7 @@ Implemented and exercised by tests:
   :helptags. The runtime compatibility matrix ([COMPATIBILITY.md](COMPATIBILITY.md)) runs the pinned runtime tree in three tiers via tools/runtime_compat.py, gated on Tier A in .github/workflows/runtime-compat.yml. The user vimrc is sourced when present; otherwise
   defaults.vim is used as a fallback when VIMRUNTIME is set and neither -u
   nor --clean is given.
-- **UI:** :suspend/:stop terminal suspend/resume, TUI dumb-terminal fallback (plain rows, no ANSI setup/teardown), runtime terminfo numeric/string-capability lookup with a tparm-style parameterized formatter (cursor addressing, conditionals, arithmetic, char/hex/octal printing), settable/queryable `t_` termcap options including t_AF/t_AB, built-in ansi/xterm/screen/tmux/linux/vt100 fallback plus TUI color-depth negotiation (Mono/Ansi16/Ansi256/TrueColor) with ANSI-16 fallback; z-ordered compositor with popup layers, dirty rows and cursor occlusion; semantic hit regions for windows/statusline/tabs/popups; draggable split borders; multi-row wildmenu popup; clipboards, mouse, focus events, wrapped lines with linebreak/breakat/showbreak/breakindent, smoothscroll chunk scrolling with cursor mapping, wrapped-line mouse mapping, wheel smoothscroll, partial-column skipcol rendering/cursor mapping, listchars, scrolloff, resizing, cursorline/column/colorcolumn, gutter reservations for 'signcolumn' (auto/yes/no/number) and 'foldcolumn' with 'numberformat' line-number formatting — sign and fold *contents* remain P2 subsystems while the gutters and widths are implemented, custom statuslines/echo-window popups.
+- **UI:** :suspend/:stop terminal suspend/resume, TUI dumb-terminal fallback (plain rows, no ANSI setup/teardown), runtime terminfo numeric/string-capability lookup with a tparm-style parameterized formatter (cursor addressing, conditionals, arithmetic, char/hex/octal printing), settable/queryable `t_` termcap options including t_AF/t_AB, built-in ansi/xterm/screen/tmux/linux/vt100 fallback plus TUI color-depth negotiation (Mono/Ansi16/Ansi256/TrueColor) with ANSI-16 fallback; z-ordered compositor with popup layers, dirty rows and cursor occlusion; semantic hit regions for windows/statusline/tabs/popups; draggable split borders; multi-row wildmenu popup; clipboards, mouse, focus events, wrapped lines with linebreak/breakat/showbreak/breakindent, smoothscroll chunk scrolling with cursor mapping, wrapped-line mouse mapping, wheel smoothscroll, partial-column skipcol rendering/cursor mapping, listchars, scrolloff, resizing, cursorline/column/colorcolumn, gutter reservations for 'signcolumn' (auto/yes/no/number) and 'foldcolumn' with 'numberformat' line-number formatting, plus the fold and sign contents described under P2 below, custom statuslines/echo-window popups.
 - **Scheduler:** nearest-deadline input/timer/job-event reactor, VimL timer_start/stop, resize and deferred redraw.
 - **Statusline:** %f/%F/%t/%m/%M/%r/%R/%h/%H/%y/%l/%L/%c/%v/%a/%{...}/%=/%<, expression caching, g:statusline_winid, and %[FuncName] clickable regions with minwid and click metadata.
 - **Tabline:** custom/default labels, per-tab hit regions, and %[FuncName] click callbacks that take precedence over tab selection.
@@ -168,15 +169,56 @@ Still missing or partial in P1:
 - Vim9-script runtime files are out of scope and reported as `E319` (compiler/context.vim and several newer syntax files such as 2html, context, csv, hare, help, hlsl, java and tsv).
 - `syntax/glimmer.vim` only loads after a JavaScript/TypeScript syntax file has set `b:current_syntax`; sourcing it standalone fails in Vim too, so the Tier C check is environment dependent.
 - The basic autoload loader covers script-level autoload files; deeper autoload and full legacy VimL semantics are still incomplete.
-- Fold and conceal options (`foldmethod`, `foldignore`, `conceallevel`, ...) are accepted and stored so runtime files load, but folding and concealment themselves remain P2 (`has('folding')`/`has('conceal')` are 0).
+- Concealment remains P2 (`has('conceal')` is 0); the conceal options are
+  accepted and stored so runtime files load. Folding is implemented, see the
+  P2 section.
 - Package after/ ordering and full startup-file ordering; :packadd/:packloadall and tags completion are present.
 - Closure-capturing Lambda Shada values (simple lambdas, named/partial Funcref, Number/String/Bool/List/Dict/Blob/Special and buffer lists are persisted). multi-level persistent undo, viminfo startup/shutdown and basic :mksession/:mkview/:loadview are present.
 - Remaining niche C++/Java cinoptions items; wrapped-line mouse mapping, wheel/chunk-level and partial-column smoothscroll are supported. keyword, completefunc and omnifunc completion plus indentexpr/cindent/cinkeys/lisp/showbreak/breakindent/display-line motions/chunk smoothscroll with cursor mapping are supported.
 - Remaining widget hit-region actions; per-window/global multi-row statuslines, statusline/tabline clicks and draggable split borders are present.
 - Longer continuous fuzzing runs; libFuzzer targets, a scheduled weekly workflow, deterministic fuzz smoke tests and text/popup/wide-char/attribute golden snapshots are present.
 
-P2/P3 areas such as folds, signs, diff, text properties, spell, diff mode,
-sessions, jobs and QuickJS are not part of this round.
+## P2 - display subsystems
+
+Implemented and exercised by tests:
+
+- **Folding (DSP-01/02/03):** window-local fold state with `'foldmethod'`
+  manual, indent, marker and expr (including `foldexpr` evaluation with
+  `v:lnum` and Vim's string results such as `>1`/`<1`/`a1`/`s1`/`=`),
+  `'foldignore'`/`'foldnestmax'`/`'foldminlines'`, `'foldlevel'` and
+  `'foldenable'`, fold text via the default `foldtext()` implementation or a
+  custom `'foldtext'` expression with `v:foldstart`/`v:foldend`/
+  `v:folddashes`/`v:foldlevel`, `zf`/`zo`/`zc`/`za`/`zO`/`zC`/
+  `zR`/`zM`/`zr`/`zm`/`zd`/`zD`/`zE`/`zi`/`zn`/`zN`/`zj`/
+  `zk`/`[z`/`]z`, `:fold`/`:foldopen`/`:foldclose`/`:folddoopen`/
+  `:folddoclosed`, `foldclosed()`/`foldclosedend()`/`foldlevel()`/
+  `foldtext()`/`foldtextresult()`, `'foldcolumn'` rendering with Vim's
+  fold-column characters and click-to-toggle, fold-aware cursor motion,
+  scrolling and mouse mapping, and fold text rows rendered with `Folded` and
+  `'fillchars'` `fold`/`foldopen`/`foldclose`/`foldsep` entries.
+  `has('folding')` is 1.
+- **Signs (DSP-04):** `:sign define/undefine/place/unplace/list/jump` with
+  groups and priorities, `sign_define()`/`sign_undefine()`/
+  `sign_getdefined()`/`sign_place()`/`sign_unplace()`/
+  `sign_getplaced()`/`sign_jump()`/`sign_placelist()`/
+  `sign_unplacelist()`, text/texthl/linehl/numhl attributes, `'signcolumn'`
+  no/yes/auto/number rendering (including signs inside the number column),
+  sign clicks, and placements anchored to stable line ids so they follow edits
+  and undo. `has('signs')` is 1.
+
+Still approximated or missing in P2:
+
+- `'foldmethod'` `syntax` and `diff` are accepted but produce no folds
+  (syntax fold regions and diff mode are not implemented yet).
+- `'foldopen'`/`'foldclose'` are stored but do not automatically open folds
+  after jumps or search; opening a fold requires `zo`/`za` or a click.
+- Folds are recomputed when the buffer or fold options change; there is no
+  incremental fold update for very large files, and manual folds are not yet
+  written by `:mksession`/`:mkview`.
+- Sign icons/images are parsed but not drawn (no GUI/image API); only the first
+  sign of a line is displayed, and `culhl` is accepted but not rendered.
+
+Diff, text properties, spell, sessions, jobs and QuickJS remain P2/P3 work.
 
 ## Verification
 
@@ -187,7 +229,7 @@ cargo test --workspace
 cargo clippy --workspace --all-targets -- -D warnings
 ~~~
 
-At the time of writing the workspace has 509 tests and no clippy warnings.
+At the time of writing the workspace has 525 tests and no clippy warnings.
 The optional PTY smoke script is tools/pty_smoke.py; some sandboxes deny
 openpty, so it is not part of the required CI gate yet.
 
@@ -201,3 +243,8 @@ openpty, so it is not part of the required CI gate yet.
   approximated by their UTF-8 bytes, and context-dependent regex atoms
   (`\%#`, `\%V`, line/column atoms) compile but never match.
 - No runtime tree is vendored; tests use temporary runtime trees.
+- Folding approximates a few Vim details: fold levels are recomputed from the
+  whole buffer instead of incrementally, `foldopen`/`foldclose` do not open
+  folds after jumps, and the `syntax`/`diff` fold methods produce no folds.
+- Sign placement is anchored with stable line ids; deleting the anchored line
+  removes the sign, as in Vim. Icons and `culhl` are not rendered.

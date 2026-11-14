@@ -239,6 +239,17 @@ impl TextBuffer {
         self.lines.iter().map(|line| line.bytes.clone()).collect()
     }
 
+    /// Lines with their stable ids, for undo snapshots.
+    pub fn snapshot_lines(&self) -> Vec<Line> {
+        self.lines.iter().cloned().collect()
+    }
+
+    /// Restore a snapshot, keeping line ids so signs keep their lines.
+    pub fn restore_snapshot(&mut self, lines: &[Line]) {
+        self.lines = LineTree::from_line_vec(lines.to_vec());
+        self.meta.changedtick = self.meta.changedtick.wrapping_add(1);
+    }
+
     pub fn restore_lines(&mut self, lines: Vec<VimString>) {
         self.lines = LineTree::from_lines(lines);
         self.meta.changedtick = self.meta.changedtick.wrapping_add(1);

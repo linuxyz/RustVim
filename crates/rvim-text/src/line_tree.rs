@@ -84,6 +84,46 @@ impl LineTree {
         Line { id, bytes }
     }
 
+    /// Build a tree from existing lines, preserving their stable ids (undo).
+    pub fn from_line_vec(lines: Vec<Line>) -> Self {
+        let mut tree = Self {
+            chunks: Vec::new(),
+            total: 0,
+            next_id: 1,
+        };
+        if lines.is_empty() {
+            tree.insert(0, VimString::new());
+            return tree;
+        }
+        tree.next_id = lines
+            .iter()
+            .map(|line| line.id.0)
+            .max()
+            .unwrap_or(0)
+            .saturating_add(1);
+        let mut chunk = Chunk {
+            lines: Vec::new(),
+            start: 0,
+        };
+        for line in lines {
+            chunk.lines.push(line);
+            if chunk.lines.len() == MAX_CHUNK_LINES {
+                tree.chunks.push(chunk);
+                let start = tree.total;
+                tree.total += MAX_CHUNK_LINES as u32;
+                chunk = Chunk {
+                    lines: Vec::new(),
+                    start,
+                };
+            }
+        }
+        if !chunk.lines.is_empty() {
+            tree.chunks.push(chunk);
+        }
+        tree.reindex();
+        tree
+    }
+
     pub fn line_count(&self) -> u32 {
         self.total
     }

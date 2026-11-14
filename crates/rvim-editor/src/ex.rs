@@ -453,6 +453,9 @@ fn execute_command_inner(editor: &mut Editor, command: ExCommand) -> Result<(), 
             editor.sync_window_options_public();
             editor.fire_event(crate::autocmd::Event::OptionSet);
         }
+        "sign" => {
+            editor.execute_sign(command.args.trim())?;
+        }
         "undo" | "u" => {
             let count = command.args.trim().parse::<u32>().unwrap_or(1).max(1);
             for _ in 0..count {
@@ -1501,8 +1504,48 @@ fn execute_command_inner(editor: &mut Editor, command: ExCommand) -> Result<(), 
             };
             editor.split_window(rvim_view::SplitDir::Vertical, path.as_deref())?;
         }
-        "foldopen" | "foldo" | "foldclose" | "foldc" | "folddoopen" | "folddoclosed" => {
-            // Folding is P2; accept the commands so syntax files load.
+        "fold" => {
+            let range = if command.range.addresses.is_empty() {
+                let lnum = editor.cursor().lnum;
+                ResolvedRange {
+                    start: lnum,
+                    end: lnum,
+                }
+            } else {
+                resolve_range(editor, &command.range)?
+            };
+            editor.create_fold(range.start, range.end)?;
+        }
+        "foldopen" => {
+            let recursive = command.bang;
+            let lines = fold_command_lines(editor, &command.range)?;
+            for lnum in lines {
+                editor.fold_open(lnum, recursive);
+            }
+        }
+        "foldclose" => {
+            let recursive = command.bang;
+            let lines = fold_command_lines(editor, &command.range)?;
+            for lnum in lines {
+                editor.fold_close(lnum, recursive);
+            }
+        }
+        "folddoopen" | "folddoclosed" => {
+            let want_closed = full == "folddoclosed";
+            let lines = if command.range.addresses.is_empty() {
+                (1..=editor.line_count().max(1)).collect()
+            } else {
+                fold_command_lines(editor, &command.range)?
+            };
+            let text = command.args.clone();
+            for lnum in lines {
+                editor.sync_folds_public();
+                let closed = editor.fold_line_closed(lnum);
+                if closed == want_closed {
+                    editor.goto_line(lnum);
+                    editor.execute_ex_line(&text)?;
+                }
+            }
         }
         "enew" => {
             check_modified(editor, command.bang)?;
@@ -3290,6 +3333,15 @@ fn reload_current(editor: &mut Editor) -> Result<(), VimError> {
         .messages
         .info(format!("\"{}\" {}L", path.display(), editor.line_count()));
     Ok(())
+}
+
+/// Lines a fold command operates on: the range, or the cursor line.
+fn fold_command_lines(editor: &mut Editor, range: &RangeSpec) -> Result<Vec<u32>, VimError> {
+    if range.addresses.is_empty() {
+        return Ok(vec![editor.cursor().lnum]);
+    }
+    let resolved = resolve_range(editor, range)?;
+    Ok((resolved.start..=resolved.end).collect())
 }
 
 pub fn resolve_range(editor: &Editor, range: &RangeSpec) -> Result<ResolvedRange, VimError> {

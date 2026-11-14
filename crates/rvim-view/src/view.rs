@@ -727,6 +727,9 @@ impl ViewState {
         } else {
             None
         };
+        let folded_attr = host.highlight("Folded");
+        let foldcolumn_attr = host.highlight("FoldColumn");
+        let signcolumn_attr = host.highlight("SignColumn");
         let number_width = if window.options.number || window.options.relativenumber {
             window.options.numberwidth as u16 + 1
         } else {
@@ -736,10 +739,14 @@ impl ViewState {
         let fold_width = window.options.foldcolumn as u16;
         let gutter_width = fold_width + sign_width + number_width;
         let text_width = rect.text.cols.saturating_sub(gutter_width);
-        let topline = window.viewport.topline.max(1);
+        let topline = normalize_topline(window);
         let leftcol = window.viewport.leftcol;
         let colorcolumn = host.highlight("ColorColumn");
         let cursorcolumn = host.highlight("CursorColumn");
+        let cursor_lnum = window.displayed_cursor_lnum();
+        let fillchars = window.options.fillchars.clone();
+        let fold_fill = crate::fold::fillchars_char(&fillchars, "fold", '-');
+        let number_in_sign_column = window.signs_in_number_column();
 
         let wrap = window.options.wrap && text_width > 0;
         let bottom = rect.text.row + text_height;
@@ -747,11 +754,6 @@ impl ViewState {
         let mut lnum = topline;
         let mut first_visible = true;
         while screen_row < bottom {
-            let line_background = if lnum == window.cursor.lnum {
-                cursorline
-            } else {
-                None
-            };
             if lnum > host.buffer_line_count(window.buffer) {
                 if !first_visible {
                     frame
@@ -760,6 +762,40 @@ impl ViewState {
                 }
                 screen_row += 1;
                 lnum += 1;
+                first_visible = false;
+                continue;
+            }
+            if window.folds.is_hidden(lnum) {
+                let Some(end) = window.folds.closed_start(lnum) else {
+                    // A hidden line that does not start the fold is covered by
+                    // the row already drawn for the fold start.
+                    lnum += 1;
+                    continue;
+                };
+                Self::render_fold_row(
+                    frame,
+                    host,
+                    window,
+                    rect,
+                    screen_row,
+                    lnum,
+                    end,
+                    fold_width,
+                    sign_width,
+                    number_width,
+                    gutter_width,
+                    text_width,
+                    folded_attr,
+                    foldcolumn_attr,
+                    signcolumn_attr,
+                    line_nr,
+                    cursor_line_nr,
+                    cursorline,
+                    fold_fill,
+                    &fillchars,
+                );
+                screen_row += 1;
+                lnum = end.saturating_add(1);
                 first_visible = false;
                 continue;
             }
@@ -812,6 +848,19 @@ impl ViewState {
             let searches = host.search_matches(window.buffer, lnum);
             let search_attr = host.highlight("Search");
             let styles = host.line_styles(window.buffer, lnum);
+            let sign_cell = window.signs.get(lnum);
+            let sign_line_hl = sign_cell
+                .map(|cell| cell.line_hl.clone())
+                .filter(|name| !name.is_empty())
+                .map(|name| host.highlight(&name));
+            let line_background = combine_background(cursorline, sign_line_hl);
+            let fold_column_text = if fold_width > 0 {
+                window
+                    .folds
+                    .fold_column(lnum, false, fold_width, &fillchars)
+            } else {
+                String::new()
+            };
             for (chunk_index, (first_byte, last_byte)) in chunks.iter().enumerate() {
                 if screen_row >= bottom {
                     break;
@@ -823,30 +872,123 @@ impl ViewState {
                         attr,
                     );
                 }
-                if number_width > 0 {
-                    let text = if chunk_index == 0 {
-                        let number = if window.options.relativenumber && lnum != window.cursor.lnum
-                        {
-                            (lnum as i64 - window.cursor.lnum as i64).unsigned_abs() as u32
-                        } else {
-                            lnum
-                        };
-                        format_number(number, &window.options.numberformat)
+                if fold_width > 0 {
+                    let attr = if lnum == cursor_lnum {
+                        host.highlight("CursorLineFold")
                     } else {
-                        String::new()
+                        foldcolumn_attr
                     };
-                    let padded = format!("{:>width$} ", text, width = (number_width - 1) as usize);
-                    let attr = if lnum == window.cursor.lnum {
-                        cursor_line_nr
+                    frame
+                        .base_mut()
+                        .put_str(screen_row, rect.text.col, &fold_column_text, attr);
+                    frame.hit_regions.push(HitRegion {
+                        rect: Rect::new(screen_row, rect.text.col, 1, fold_width),
+                        action: ActionId {
+                            kind: ActionKind::Fold,
+                            id: rvim_types::Id::raw(window.id),
+                            index: lnum,
+                        },
+                    });
+                }
+                if sign_width > 0 {
+                    let sign_attr = if lnum == cursor_lnum {
+                        host.highlight("CursorLineSign")
                     } else {
-                        line_nr
+                        signcolumn_attr
                     };
                     frame.base_mut().put_str(
                         screen_row,
-                        rect.text.col + fold_width + sign_width,
-                        &padded,
-                        attr,
+                        rect.text.col + fold_width,
+                        "  ",
+                        sign_attr,
                     );
+                    frame.hit_regions.push(HitRegion {
+                        rect: Rect::new(screen_row, rect.text.col + fold_width, 1, sign_width),
+                        action: ActionId {
+                            kind: ActionKind::Sign,
+                            id: rvim_types::Id::raw(window.id),
+                            index: lnum,
+                        },
+                    });
+                    if chunk_index == 0 {
+                        if let Some(cell) = sign_cell {
+                            if !cell.text.is_empty() && !number_in_sign_column {
+                                let attr = if cell.text_hl.is_empty() {
+                                    signcolumn_attr
+                                } else {
+                                    host.highlight(&cell.text_hl)
+                                };
+                                frame.base_mut().put_str(
+                                    screen_row,
+                                    rect.text.col + fold_width,
+                                    &cell.text,
+                                    attr,
+                                );
+                            }
+                        }
+                    }
+                }
+                if number_width > 0 {
+                    let mut drawn_sign = false;
+                    if chunk_index == 0 && number_in_sign_column {
+                        if let Some(cell) = sign_cell {
+                            let attr = if cell.text_hl.is_empty() {
+                                line_nr
+                            } else {
+                                host.highlight(&cell.text_hl)
+                            };
+                            let prefix_width = (number_width as usize).saturating_sub(2);
+                            let mut text = " ".repeat(prefix_width);
+                            text.push_str(&cell.text.chars().take(2).collect::<String>());
+                            let used = text.chars().count();
+                            let total = (number_width as usize).max(used) + 1;
+                            while text.chars().count() < total {
+                                text.push(' ');
+                            }
+                            frame.base_mut().put_str(
+                                screen_row,
+                                rect.text.col + fold_width + sign_width,
+                                &text,
+                                attr,
+                            );
+                            drawn_sign = !cell.text.is_empty();
+                        }
+                    }
+                    if !drawn_sign {
+                        let text = if chunk_index == 0 {
+                            let number =
+                                if window.options.relativenumber && lnum != window.cursor.lnum {
+                                    (lnum as i64 - window.cursor.lnum as i64).unsigned_abs() as u32
+                                } else {
+                                    lnum
+                                };
+                            format_number(number, &window.options.numberformat)
+                        } else {
+                            String::new()
+                        };
+                        let padded =
+                            format!("{:>width$} ", text, width = (number_width - 1) as usize);
+                        let attr = if lnum == cursor_lnum {
+                            cursor_line_nr
+                        } else if number_in_sign_column
+                            && chunk_index == 0
+                            && sign_cell.is_some_and(|cell| !cell.num_hl.is_empty())
+                        {
+                            host.highlight(
+                                &sign_cell
+                                    .map(|cell| cell.num_hl.clone())
+                                    .unwrap_or_default(),
+                            )
+                        } else {
+                            line_nr
+                        };
+                        frame.base_mut().put_str(
+                            screen_row,
+                            rect.text.col + fold_width + sign_width,
+                            &padded,
+                            attr,
+                        );
+                    }
                 }
                 let chunk_col = if chunk_index > 0 {
                     frame.base_mut().put_str(
@@ -918,7 +1060,7 @@ impl ViewState {
         if window.options.cursorcolumn {
             let screen = host.screen_col(window.buffer, window.cursor, window.options.tabstop);
             if screen < text_width as u32 {
-                let col = rect.text.col + number_width + screen as u16;
+                let col = rect.text.col + gutter_width + screen as u16;
                 for row in 0..text_height {
                     frame
                         .base_mut()
@@ -928,6 +1070,107 @@ impl ViewState {
         }
 
         Self::render_statusline_impl(frame, window, host, rect, active_window);
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn render_fold_row(
+        frame: &mut Frame,
+        host: &dyn RenderHost,
+        window: &Window,
+        rect: &crate::layout::LayoutRect,
+        row: u16,
+        start: u32,
+        end: u32,
+        fold_width: u16,
+        sign_width: u16,
+        number_width: u16,
+        gutter_width: u16,
+        text_width: u16,
+        folded: Attr,
+        foldcolumn_attr: Attr,
+        signcolumn_attr: Attr,
+        line_nr: Attr,
+        cursor_line_nr: Attr,
+        cursorline: Option<Attr>,
+        fold_fill: char,
+        fillchars: &str,
+    ) {
+        let cursor_line = start == window.displayed_cursor_lnum();
+        let base = if cursor_line {
+            combine_background(Some(folded), cursorline).unwrap_or(folded)
+        } else {
+            folded
+        };
+        frame
+            .base_mut()
+            .fill(Rect::new(row, rect.text.col, 1, rect.text.cols), ' ', base);
+        if fold_width > 0 {
+            let attr = if cursor_line {
+                host.highlight("CursorLineFold")
+            } else {
+                foldcolumn_attr
+            };
+            let cells = window.folds.fold_column(start, true, fold_width, fillchars);
+            frame.base_mut().put_str(row, rect.text.col, &cells, attr);
+            frame.hit_regions.push(HitRegion {
+                rect: Rect::new(row, rect.text.col, 1, fold_width),
+                action: ActionId {
+                    kind: ActionKind::Fold,
+                    id: rvim_types::Id::raw(window.id),
+                    index: start,
+                },
+            });
+        }
+        if sign_width > 0 {
+            let attr = if cursor_line {
+                host.highlight("CursorLineSign")
+            } else {
+                signcolumn_attr
+            };
+            frame
+                .base_mut()
+                .put_str(row, rect.text.col + fold_width, "  ", attr);
+            frame.hit_regions.push(HitRegion {
+                rect: Rect::new(row, rect.text.col + fold_width, 1, sign_width),
+                action: ActionId {
+                    kind: ActionKind::Sign,
+                    id: rvim_types::Id::raw(window.id),
+                    index: start,
+                },
+            });
+        }
+        let mut used = 0u16;
+        if number_width > 0 {
+            let number = if window.options.relativenumber && start != window.cursor.lnum {
+                (start as i64 - window.cursor.lnum as i64).unsigned_abs() as u32
+            } else {
+                start
+            };
+            let text = format_number(number, &window.options.numberformat);
+            let padded = format!("{:>width$} ", text, width = (number_width - 1) as usize);
+            let attr = if cursor_line { cursor_line_nr } else { line_nr };
+            frame
+                .base_mut()
+                .put_str(row, rect.text.col + fold_width + sign_width, &padded, attr);
+        }
+        let text = window.folds.text.get(&start).cloned().unwrap_or_else(|| {
+            let count = end.saturating_sub(start).saturating_add(1);
+            format!("+--{count:3} lines folded ")
+        });
+        let text = truncate_display(&text, text_width);
+        used +=
+            rvim_types::unicode::display_width(text.as_bytes(), 0, window.options.tabstop) as u16;
+        frame
+            .base_mut()
+            .put_str(row, rect.text.col + gutter_width, &text, base);
+        let mut col = rect.text.col + gutter_width + used.min(text_width);
+        let limit = rect.text.col + rect.text.cols;
+        while col < limit {
+            frame
+                .base_mut()
+                .put_str(row, col, &fold_fill.to_string(), base);
+            col += 1;
+        }
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -1063,37 +1306,23 @@ impl ViewState {
         host: &dyn RenderHost,
         topline: u32,
         leftcol: u32,
-        number_width: u16,
+        gutter_width: u16,
         rect: &crate::layout::LayoutRect,
     ) -> Option<(u16, u16)> {
-        if window.cursor.lnum < topline {
+        let cursor_lnum = window.displayed_cursor_lnum();
+        if cursor_lnum < topline {
             return None;
         }
         let text_height = window.height.max(1);
+        let mut row = rows_before(window, host, topline, cursor_lnum);
+        if window.folds.is_hidden(window.cursor.lnum) {
+            if row >= u32::from(text_height) {
+                return None;
+            }
+            return Some((rect.text.row + row as u16, rect.text.col + gutter_width));
+        }
         if window.options.wrap && window.text_width() > 0 {
             let width = window.text_width() as u32;
-            let mut row = 0u32;
-            for lnum in topline..window.cursor.lnum {
-                if let Some(line) = host.buffer_line(window.buffer, lnum) {
-                    let prefix = continuation_prefix(window, line);
-                    let prefix_width = text_width_of(&prefix, window.options.tabstop);
-                    let rest_width = width as u16 - prefix_width.min(width as u16);
-                    let chunks = wrap_chunks(
-                        line,
-                        width as usize,
-                        rest_width.max(1) as usize,
-                        window.options.tabstop,
-                        window.options.linebreak,
-                        &window.options.breakat,
-                    );
-                    let skipped = if lnum == topline {
-                        skipped_chunks(window, line, &chunks)
-                    } else {
-                        0
-                    };
-                    row += chunks.len().saturating_sub(skipped) as u32;
-                }
-            }
             let line = host
                 .buffer_line(window.buffer, window.cursor.lnum)
                 .unwrap_or(b"");
@@ -1138,28 +1367,27 @@ impl ViewState {
                 col = col.saturating_sub(skipcol.saturating_sub(chunk_start_screen as u32));
             }
             if chunk_index > skipped {
-                col += prefix_width as u32;
+                col += u32::from(prefix_width);
             }
-            if row >= text_height as u32 {
+            if row >= u32::from(text_height) {
                 return None;
             }
             return Some((
                 rect.text.row + row as u16,
-                rect.text.col + number_width + col as u16,
+                rect.text.col + gutter_width + col as u16,
             ));
         }
-        let row = window.cursor.lnum - topline;
-        if row >= rect.text.rows as u32 {
+        if row >= u32::from(text_height) {
             return None;
         }
         let screen = host.screen_col(window.buffer, window.cursor, window.options.tabstop);
         let col = screen.saturating_sub(leftcol);
-        if col >= window.text_width() as u32 && window.text_width() > 0 {
+        if col >= u32::from(window.text_width()) && window.text_width() > 0 {
             return None;
         }
         Some((
             rect.text.row + row as u16,
-            rect.text.col + number_width + col as u16,
+            rect.text.col + gutter_width + col as u16,
         ))
     }
 
@@ -1563,6 +1791,9 @@ fn merge_attr(mut attr: Attr, background: Option<Attr>) -> Attr {
         if background.bg != rvim_ui_api::Color::Default {
             attr.bg = background.bg;
         }
+        if background.fg != rvim_ui_api::Color::Default {
+            attr.fg = background.fg;
+        }
         attr.flags |= background.flags;
     }
     attr
@@ -1713,6 +1944,94 @@ fn remove_leaf(node: &mut LayoutNode, target: WindowId) -> bool {
             false
         }
     }
+}
+
+/// Topline never points at a line hidden by a closed fold.
+fn normalize_topline(window: &Window) -> u32 {
+    let mut topline = window.viewport.topline.max(1);
+    if window.folds.is_hidden(topline) {
+        topline = window.folds.owner(topline).max(1);
+    }
+    topline
+}
+
+/// Number of screen rows occupied by the visible lines before \p target.
+fn rows_before(window: &Window, host: &dyn RenderHost, topline: u32, target: u32) -> u32 {
+    let mut row = 0u32;
+    let mut lnum = topline;
+    let width = window.text_width();
+    while lnum < target {
+        if window.folds.is_hidden(lnum) {
+            if window.folds.owner(lnum) == lnum {
+                row += 1;
+            }
+            lnum += 1;
+            continue;
+        }
+        if window.options.wrap && width > 0 {
+            let line = host.buffer_line(window.buffer, lnum).unwrap_or(b"");
+            let prefix = continuation_prefix(window, line);
+            let prefix_width = text_width_of(&prefix, window.options.tabstop);
+            let rest_width = width.saturating_sub(prefix_width).max(1);
+            let chunks = wrap_chunks(
+                line,
+                width as usize,
+                rest_width as usize,
+                window.options.tabstop,
+                window.options.linebreak,
+                &window.options.breakat,
+            );
+            let skipped = if lnum == topline {
+                skipped_chunks(window, line, &chunks)
+            } else {
+                0
+            };
+            row += chunks.len().saturating_sub(skipped) as u32;
+        } else {
+            row += 1;
+        }
+        lnum += 1;
+    }
+    row
+}
+
+/// Combine 'cursorline' and sign "linehl" backgrounds.
+fn combine_background(base: Option<Attr>, extra: Option<Attr>) -> Option<Attr> {
+    match (base, extra) {
+        (None, None) => None,
+        (Some(attr), None) | (None, Some(attr)) => Some(attr),
+        (Some(mut base), Some(extra)) => {
+            if extra.bg != rvim_ui_api::Color::Default {
+                base.bg = extra.bg;
+            }
+            if extra.fg != rvim_ui_api::Color::Default {
+                base.fg = extra.fg;
+            }
+            base.flags |= extra.flags;
+            Some(base)
+        }
+    }
+}
+
+/// Truncate \p text so it occupies at most \p width screen cells.
+fn truncate_display(text: &str, width: u16) -> String {
+    if width == 0 {
+        return String::new();
+    }
+    let mut out = String::new();
+    let mut used = 0u16;
+    for ch in text.chars() {
+        if ch == '\n' || ch == '\r' {
+            break;
+        }
+        let cells = rvim_types::unicode::char_width(ch).max(1) as u16;
+        if used + cells > width {
+            break;
+        }
+        used += cells;
+        out.push(ch);
+    }
+    out
 }
 
 #[cfg(test)]

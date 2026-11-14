@@ -1,4 +1,4 @@
-use crate::{LineTree, TextBuffer};
+use crate::{Line, LineTree, TextBuffer};
 use rvim_types::{BufPos, VimString};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -6,7 +6,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 /// structural sharing can replace the line vectors without changing the API.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Snapshot {
-    pub lines: Vec<VimString>,
+    pub lines: Vec<Line>,
     pub cursor: BufPos,
     pub seq: u64,
 }
@@ -47,7 +47,7 @@ impl UndoManager {
     }
 
     /// Seed a session from a persisted pre-edit snapshot.
-    pub fn seed(&mut self, previous: Vec<VimString>, current: Vec<VimString>, cursor: BufPos) {
+    pub fn seed(&mut self, previous: Vec<Line>, current: Vec<Line>, cursor: BufPos) {
         self.nodes.clear();
         self.pending = None;
         let root = UndoNode {
@@ -102,13 +102,19 @@ impl UndoManager {
     }
 
     pub fn root_lines(&self) -> Option<Vec<VimString>> {
-        self.nodes.first().map(|node| node.snapshot.lines.clone())
+        self.nodes.first().map(|node| {
+            node.snapshot
+                .lines
+                .iter()
+                .map(|line| line.bytes.clone())
+                .collect()
+        })
     }
 
     pub fn record(&mut self, buffer: &TextBuffer, cursor: BufPos) {
         if self.pending.is_none() {
             self.pending = Some(Snapshot {
-                lines: buffer.lines_vec(),
+                lines: buffer.snapshot_lines(),
                 cursor,
                 seq: self.seq,
             });
@@ -120,8 +126,13 @@ impl UndoManager {
         let Some(before) = self.pending.take() else {
             return false;
         };
-        let after = buffer.lines_vec();
-        if before.lines == after {
+        let after = buffer.snapshot_lines();
+        if before
+            .lines
+            .iter()
+            .map(|line| &line.bytes)
+            .eq(after.iter().map(|line| &line.bytes))
+        {
             return false;
         }
         if self.nodes.is_empty() {
@@ -180,7 +191,7 @@ impl UndoManager {
         let parent = node.parent?;
         let snapshot = self.nodes.get(parent)?.snapshot.clone();
         self.current = parent;
-        buffer.restore_lines(snapshot.lines.clone());
+        buffer.restore_snapshot(&snapshot.lines);
         buffer.set_modified(true);
         Some(snapshot.cursor)
     }
@@ -190,7 +201,7 @@ impl UndoManager {
         let child = *node.children.last()?;
         let snapshot = self.nodes.get(child)?.snapshot.clone();
         self.current = child;
-        buffer.restore_lines(snapshot.lines.clone());
+        buffer.restore_snapshot(&snapshot.lines);
         buffer.set_modified(true);
         Some(snapshot.cursor)
     }

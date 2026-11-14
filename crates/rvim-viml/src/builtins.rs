@@ -34,6 +34,21 @@ const BUILTINS: &[&str] = &[
     "exists",
     "extend",
     "hlID",
+    "indent",
+    "sign_define",
+    "sign_undefine",
+    "sign_getdefined",
+    "sign_place",
+    "sign_unplace",
+    "sign_getplaced",
+    "sign_jump",
+    "sign_placelist",
+    "sign_unplacelist",
+    "foldclosed",
+    "foldclosedend",
+    "foldlevel",
+    "foldtext",
+    "foldtextresult",
     "hlexists",
     "items",
     "synID",
@@ -116,6 +131,20 @@ pub fn is_builtin(name: &str) -> bool {
 
 pub fn builtin_names() -> &'static [&'static str] {
     BUILTINS
+}
+
+fn optional_winid(args: &[Value]) -> Result<Option<u64>> {
+    match args.get(1) {
+        None => Ok(None),
+        Some(value) => {
+            let number = number_arg(value)?;
+            if number < 0 {
+                Ok(None)
+            } else {
+                Ok(Some(number as u64))
+            }
+        }
+    }
 }
 
 fn arity(name: &str, args: &[Value], minimum: usize, maximum: Option<usize>) -> Result<()> {
@@ -756,6 +785,50 @@ pub(crate) fn call_builtin(ctx: &mut Ctx, name: &str, args: &[Value]) -> Result<
             arity(name, args, 1, Some(1))?;
             let group = string_arg(arg(args, 0))?.to_string_lossy().into_owned();
             Ok(Value::Number(ctx.host.highlight_id(&group)?))
+        }
+        "sign_define" | "sign_undefine" | "sign_getdefined" | "sign_place" | "sign_unplace"
+        | "sign_getplaced" | "sign_jump" | "sign_placelist" | "sign_unplacelist" => {
+            match ctx.host.call_function(name, args)? {
+                Some(value) => Ok(value),
+                None => Err(codes::e117(name)),
+            }
+        }
+        "indent" => {
+            arity(name, args, 1, Some(1))?;
+            let lnum = number_arg(arg(args, 0))?;
+            Ok(Value::Number(ctx.host.indent(lnum)?))
+        }
+        "foldclosed" => {
+            arity(name, args, 1, Some(2))?;
+            let lnum = number_arg(arg(args, 0))?;
+            let winid = optional_winid(args)?;
+            Ok(Value::Number(ctx.host.fold_closed(lnum, winid)?))
+        }
+        "foldclosedend" => {
+            arity(name, args, 1, Some(2))?;
+            let lnum = number_arg(arg(args, 0))?;
+            let winid = optional_winid(args)?;
+            Ok(Value::Number(ctx.host.fold_closed_end(lnum, winid)?))
+        }
+        "foldlevel" => {
+            arity(name, args, 1, Some(2))?;
+            let lnum = number_arg(arg(args, 0))?;
+            let winid = optional_winid(args)?;
+            Ok(Value::Number(ctx.host.fold_level(lnum, winid)?))
+        }
+        "foldtext" => {
+            arity(name, args, 0, Some(0))?;
+            Ok(Value::String(VimString::from(
+                ctx.host.fold_text()?.as_str(),
+            )))
+        }
+        "foldtextresult" => {
+            arity(name, args, 1, Some(2))?;
+            let lnum = number_arg(arg(args, 0))?;
+            let winid = optional_winid(args)?;
+            Ok(Value::String(VimString::from(
+                ctx.host.fold_text_result(lnum, winid)?.as_str(),
+            )))
         }
         "synID" => {
             arity(name, args, 3, Some(3))?;

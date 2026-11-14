@@ -1,6 +1,8 @@
 use rvim_types::{BufPos, BufferId, WindowId};
 use rvim_ui_api::{Size, UiMode};
 
+use crate::fold::FoldState;
+use crate::signs::SignState;
 use crate::view::RenderHost;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -42,6 +44,14 @@ pub struct WindowOptions {
     pub numberformat: String,
     pub winfixheight: bool,
     pub winfixwidth: bool,
+    pub fillchars: String,
+    pub foldmethod: String,
+    pub foldmarker: String,
+    pub foldignore: String,
+    pub foldminlines: i64,
+    pub foldnestmax: i64,
+    pub foldtext: String,
+    pub foldexpr: String,
 }
 
 impl Default for WindowOptions {
@@ -73,6 +83,14 @@ impl Default for WindowOptions {
             numberformat: String::from("%d"),
             winfixheight: false,
             winfixwidth: false,
+            fillchars: String::new(),
+            foldmethod: String::from("manual"),
+            foldmarker: String::from("{{{,}}}"),
+            foldignore: String::from("#"),
+            foldminlines: 1,
+            foldnestmax: 20,
+            foldtext: String::from("foldtext()"),
+            foldexpr: String::from("0"),
         }
     }
 }
@@ -99,6 +117,10 @@ pub struct Window {
     pub mode: UiMode,
     pub search_highlight: Option<(u32, u32)>,
     pub visual: Option<VisualSelection>,
+    /// Window-local fold state, maintained by the editor.
+    pub folds: FoldState,
+    /// Signs displayed in this window, maintained by the editor.
+    pub signs: SignState,
 }
 
 impl Window {
@@ -124,6 +146,8 @@ impl Window {
             mode: UiMode::Normal,
             search_highlight: None,
             visual: None,
+            folds: FoldState::default(),
+            signs: SignState::default(),
         }
     }
 
@@ -144,33 +168,50 @@ impl Window {
         let text_height = self.height.max(1) as u32;
         let text_width = self.text_width();
         let screen = rvim_edit_screen_col(host, self.buffer, self.cursor, self.options.tabstop);
+        let cursor_lnum = self.displayed_cursor_lnum();
+        let cursor_hidden = self.folds.is_hidden(self.cursor.lnum);
+        if self.folds.is_hidden(self.viewport.topline) {
+            self.viewport.topline = self.folds.owner(self.viewport.topline).max(1);
+        }
         if self.options.wrap && text_width > 0 {
-            if self.cursor.lnum < self.viewport.topline {
-                self.viewport.topline = self.cursor.lnum;
+            if cursor_lnum < self.viewport.topline {
+                self.viewport.topline = cursor_lnum;
             }
             let width = text_width as usize;
             let mut row = 0usize;
-            for lnum in self.viewport.topline..self.cursor.lnum {
+            for lnum in self.viewport.topline..cursor_lnum {
+                if self.folds.is_hidden(lnum) {
+                    if self.folds.owner(lnum) == lnum {
+                        row += 1;
+                    }
+                    continue;
+                }
                 let line = host.buffer_line(self.buffer, lnum).unwrap_or(b"");
                 let display = rvim_types::unicode::display_width(line, 0, self.options.tabstop);
                 row += display.div_ceil(width).max(1);
             }
-            row += (screen as usize) / width;
+            if !cursor_hidden {
+                row += (screen as usize) / width;
+            }
             if row >= text_height as usize {
-                self.viewport.topline = self.cursor.lnum;
+                self.viewport.topline = cursor_lnum;
             }
             self.viewport.curswant = screen;
             return;
         }
+        if self.folds.is_hidden(self.viewport.topline) {
+            self.viewport.topline = self.folds.owner(self.viewport.topline).max(1);
+        }
         let scrolloff = (self.options.scrolloff as u32).min(text_height.saturating_sub(1) / 2);
-        if self.cursor.lnum < self.viewport.topline + scrolloff {
-            self.viewport.topline = self.cursor.lnum.saturating_sub(scrolloff).max(1);
-        } else if self.cursor.lnum + scrolloff >= self.viewport.topline + text_height {
-            self.viewport.topline = self
-                .cursor
-                .lnum
+        if cursor_lnum < self.viewport.topline + scrolloff {
+            self.viewport.topline = cursor_lnum.saturating_sub(scrolloff).max(1);
+        } else if cursor_lnum + scrolloff >= self.viewport.topline + text_height {
+            self.viewport.topline = cursor_lnum
                 .saturating_sub(text_height.saturating_sub(scrolloff).saturating_sub(1))
                 .max(1);
+        }
+        if self.folds.is_hidden(self.viewport.topline) {
+            self.viewport.topline = self.folds.owner(self.viewport.topline).max(1);
         }
         if screen < self.viewport.leftcol {
             self.viewport.leftcol = screen;
@@ -180,13 +221,46 @@ impl Window {
         self.viewport.curswant = screen;
     }
 
-    /// Width reserved by the sign column.  RVim has no sign API yet, so
-    /// "auto" reserves nothing and the other modes reserve their Vim widths.
+    /// Width of the sign column outside the number column.
+    ///
+    /// "number" shares the number column when line numbers are displayed;
+    /// otherwise it behaves like "auto". "auto" only reserves cells when the
+    /// buffer actually has a sign.
     pub fn signcolumn_width(&self) -> u16 {
         match self.options.signcolumn.as_str() {
+            "no" => 0,
             "yes" => 2,
-            "number" => self.options.numberwidth as u16 + 1,
-            _ => 0,
+            "number" => {
+                if self.options.number || self.options.relativenumber {
+                    0
+                } else if self.signs.present {
+                    2
+                } else {
+                    0
+                }
+            }
+            _ => {
+                if self.signs.present {
+                    2
+                } else {
+                    0
+                }
+            }
+        }
+    }
+
+    /// True when signs are painted inside the number column.
+    pub fn signs_in_number_column(&self) -> bool {
+        self.options.signcolumn == "number" && (self.options.number || self.options.relativenumber)
+    }
+
+    /// Line shown for the cursor: the start line when the cursor is inside a
+    /// closed fold (Vim never leaves the cursor on a hidden line).
+    pub fn displayed_cursor_lnum(&self) -> u32 {
+        if self.folds.is_hidden(self.cursor.lnum) {
+            self.folds.owner(self.cursor.lnum).max(1)
+        } else {
+            self.cursor.lnum
         }
     }
 

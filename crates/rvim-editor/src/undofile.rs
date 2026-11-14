@@ -1,7 +1,7 @@
 use std::io;
 use std::path::{Path, PathBuf};
 
-use rvim_text::{Snapshot, UndoNode};
+use rvim_text::{Line, LineId, Snapshot, UndoNode};
 use rvim_types::{BufPos, VimString};
 
 use crate::editor::Editor;
@@ -63,8 +63,8 @@ pub fn write(path: &Path, nodes: &[UndoNode], current: usize) -> io::Result<()> 
         bytes.extend_from_slice(&node.time.to_le_bytes());
         bytes.extend_from_slice(&(node.snapshot.lines.len() as u32).to_le_bytes());
         for line in &node.snapshot.lines {
-            bytes.extend_from_slice(&(line.len() as u32).to_le_bytes());
-            bytes.extend_from_slice(line.as_bytes());
+            bytes.extend_from_slice(&(line.bytes.len() as u32).to_le_bytes());
+            bytes.extend_from_slice(line.bytes.as_bytes());
         }
     }
     rvim_platform::fs::write_file_atomic(path, &bytes)
@@ -93,7 +93,7 @@ pub fn read(path: &Path) -> io::Result<(Vec<UndoNode>, usize)> {
         let time = read_u64(&bytes, &mut position)?;
         let line_count = read_u32(&bytes, &mut position)? as usize;
         let mut lines = Vec::with_capacity(line_count);
-        for _ in 0..line_count {
+        for index in 0..line_count {
             let length = read_u32(&bytes, &mut position)? as usize;
             if position + length > bytes.len() {
                 return Err(io::Error::new(
@@ -101,8 +101,12 @@ pub fn read(path: &Path) -> io::Result<(Vec<UndoNode>, usize)> {
                     "truncated undo file",
                 ));
             }
-            lines.push(VimString::from(bytes[position..position + length].to_vec()));
+            let text = VimString::from(bytes[position..position + length].to_vec());
             position += length;
+            lines.push(Line {
+                id: LineId(index as u64 + 1),
+                bytes: text,
+            });
         }
         nodes.push(UndoNode {
             id: nodes.len(),

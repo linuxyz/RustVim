@@ -83,8 +83,11 @@ Shared documented approximations behind these numbers:
   the character instead of matching the whole character, and contextual atoms
   (`\%#`, `\%V`, line/column atoms) compile but never match because the
   regex crate has no editor context.
-- Fold and conceal options are accepted and stored, but folding and
-  concealment remain P2 features (`has('folding')` is still 0).
+- Folding and signs are implemented (`has('folding')` and `has('signs')` are
+  1), so runtime files that branch on those features now take the folding/sign
+  paths; the matrix above was re-run with them enabled. Concealment remains a
+  P2 feature (`has('conceal')` is 0), and the conceal options are accepted and
+  stored only so that runtime files load.
 
 Tier C is explicitly *not* a release gate: P1 targets core editing, help and
 syntax, and the gap list above tracks the remaining work towards Tier C.
