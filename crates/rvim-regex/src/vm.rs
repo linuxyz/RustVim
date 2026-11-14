@@ -447,6 +447,7 @@ fn anchor_matches(anchor: Anchor, haystack: &[u8], pos: usize) -> bool {
         }
         Anchor::TextStart => pos == 0,
         Anchor::TextEnd => pos == haystack.len(),
+        Anchor::Never => false,
     }
 }
 

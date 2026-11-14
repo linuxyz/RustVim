@@ -415,13 +415,18 @@ impl<'a> Lexer<'a> {
         }
         let text = VimString::from(&self.input[self.pos..end]);
         self.pos = end;
-        let kind = match text.as_bytes() {
-            b"is" => TokenKind::Keyword(Keyword::Is),
-            b"isnot" => TokenKind::Keyword(Keyword::IsNot),
-            b"in" => TokenKind::Keyword(Keyword::In),
-            _ => TokenKind::Ident(text),
+        // '#" is a valid identifier character (autoload names), so "is#" and
+        // "isnot#" arrive here as a single identifier.
+        let keyword = match text.as_bytes() {
+            b"is" | b"is#" | b"is?" => Some(Keyword::Is),
+            b"isnot" | b"isnot#" | b"isnot?" => Some(Keyword::IsNot),
+            b"in" => Some(Keyword::In),
+            _ => None,
         };
-        Ok(self.token(kind, start))
+        if let Some(keyword) = keyword {
+            return Ok(self.token(TokenKind::Keyword(keyword), start));
+        }
+        Ok(self.token(TokenKind::Ident(text), start))
     }
 
     fn environment(&mut self, start: usize) -> Result<Token> {
@@ -713,13 +718,25 @@ impl<'a> Lexer<'a> {
                 }
                 let name = &self.input[name_start..self.pos];
                 self.pos += 1;
-                let bytes = special_key(name).ok_or_else(|| {
-                    self.error(format!(
-                        "unsupported key notation <{}>",
-                        String::from_utf8_lossy(name)
-                    ))
-                })?;
-                out.extend_from_slice(&bytes);
+                match special_key(name) {
+                    Some(bytes) => out.extend_from_slice(&bytes),
+                    // Vim drops the backslash of an unrecognized "\<name>"
+                    // and copies the remaining characters, which is how syntax
+                    // files write regex atoms such as "\<done\>" in
+                    // double-quoted strings.
+                    None => {
+                        out.push(b'<');
+                        let mut index = 0;
+                        while index < name.len() {
+                            if name[index] == b'\\' && index + 1 < name.len() {
+                                index += 1;
+                            }
+                            out.push(name[index]);
+                            index += 1;
+                        }
+                        out.push(b'>');
+                    }
+                }
             }
             b'\n' => {
                 self.line += 1;

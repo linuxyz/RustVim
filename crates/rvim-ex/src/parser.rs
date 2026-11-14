@@ -135,6 +135,13 @@ pub fn parse(input: &str) -> Result<ExCommand, ExParseError> {
     while pos < bytes.len() && (bytes[pos].is_ascii_alphabetic() || bytes[pos] == b'_') {
         pos += 1;
     }
+    // User defined commands start with an uppercase letter and may contain
+    // digits (runtime/syntax/vim.vim defines ":Vim9").
+    if pos > name_start && bytes[name_start].is_ascii_uppercase() {
+        while pos < bytes.len() && bytes[pos].is_ascii_alphanumeric() {
+            pos += 1;
+        }
+    }
     if pos == name_start {
         if pos < bytes.len() && bytes[pos].is_ascii_digit() {
             // A bare number is a range with no command; useful for :{range}.

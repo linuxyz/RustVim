@@ -3100,8 +3100,10 @@ fn option_registry_covers_vim_92() {
     assert!(spec("number").is_some());
     assert!(spec("guifont").is_none());
     assert_eq!(all_spec("guifont").unwrap().feature, Some("gui"));
-    assert_eq!(all_spec("foldmethod").unwrap().feature, Some("folding"));
-    assert!(spec("foldmethod").is_none());
+    // Folding is not implemented yet, but the options are accepted so runtime
+    // syntax files can set them; see docs/STATUS.md.
+    assert_eq!(all_spec("foldmethod").unwrap().feature, None);
+    assert!(spec("foldmethod").is_some());
     assert_eq!(
         spec("cedit").unwrap().kind,
         rvim_editor::options::OptionType::String
@@ -3117,7 +3119,11 @@ fn option_registry_covers_vim_92() {
 fn gated_options_and_validators_reject_bad_values() {
     let mut ed = Editor::new(Size::new(12, 50));
     ed.execute_ex("set foldmethod=manual");
-    assert!(ed.messages.error, "folding option should be gated");
+    assert!(
+        !ed.messages.error,
+        "folding options are accepted (folding itself is P2): {:?}",
+        ed.messages.last
+    );
     ed.execute_ex("set guifont=Monaco");
     assert!(ed.messages.error, "GUI option should be gated");
     ed.execute_ex("set undofile");

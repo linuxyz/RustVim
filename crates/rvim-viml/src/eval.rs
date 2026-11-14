@@ -399,6 +399,13 @@ pub(crate) fn call_named(
         return Ok(value);
     }
     if canonical.contains('#') {
+        // Load autoload/foo.vim on first use of foo#bar().
+        autoload_for(ctx, &canonical)?;
+        if let Some(function) = ctx.runtime.get_function(&canonical).cloned() {
+            return script::call_user_function(ctx, &function, &args, self_dict);
+        }
+    }
+    if canonical.contains('#') {
         return Err(VimError::new(
             117,
             format!(
@@ -479,10 +486,16 @@ pub(crate) fn get_var(ctx: &mut Ctx, scope: Option<Scope>, name: &VimString) -> 
         return whole_scope(ctx, scope, &display);
     }
     match scope {
-        Some(Scope::Global) => ctx
-            .runtime
-            .get_global(&name.to_string_lossy())
-            .ok_or_else(|| codes::e121(&display)),
+        Some(Scope::Global) => {
+            let key = name.to_string_lossy().into_owned();
+            if let Some(value) = ctx.runtime.get_global(&key) {
+                return Ok(value);
+            }
+            autoload_for(ctx, &key)?;
+            ctx.runtime
+                .get_global(&key)
+                .ok_or_else(|| codes::e121(&display))
+        }
         Some(Scope::Buffer) | Some(Scope::Window) | Some(Scope::Tab) => {
             let scope = host_scope(scope.unwrap());
             ctx.host.get_var(scope, &name.to_string_lossy())
@@ -514,6 +527,15 @@ pub(crate) fn get_var(ctx: &mut Ctx, scope: Option<Scope>, name: &VimString) -> 
                 .ok_or_else(|| codes::e121(&display))
         }
         None => {
+            // Legacy Vim script exposes a few bare constants.  "version" is
+            // the same value as v:version and is used by runtime files such
+            // as syntax/ada.vim ("if version < 600").
+            if name.as_bytes() == b"version" {
+                return Ok(ctx
+                    .runtime
+                    .get_vvar("version")
+                    .unwrap_or(Value::Number(902)));
+            }
             if name.as_bytes() == b"self" {
                 if let Some(frame) = ctx.runtime.current_frame() {
                     if let Some(self_dict) = &frame.self_dict {
@@ -521,21 +543,43 @@ pub(crate) fn get_var(ctx: &mut Ctx, scope: Option<Scope>, name: &VimString) -> 
                     }
                 }
             }
-            if let Some(frame) = ctx.runtime.current_frame() {
+            let found = if let Some(frame) = ctx.runtime.current_frame() {
                 let locals = frame.locals.clone();
                 let args = frame.args.clone();
                 let closure = frame.closure.clone();
                 dict_lookup(&locals, name)
                     .or_else(|| dict_lookup(&args, name))
                     .or_else(|| closure_lookup(&closure, name))
-                    .ok_or_else(|| codes::e121(&display))
             } else {
-                ctx.runtime
-                    .get_global(&name.to_string_lossy())
-                    .ok_or_else(|| codes::e121(&display))
+                ctx.runtime.get_global(&name.to_string_lossy())
+            };
+            if let Some(value) = found {
+                return Ok(value);
             }
+            autoload_for(ctx, &name.to_string_lossy())?;
+            ctx.runtime
+                .get_global(&name.to_string_lossy())
+                .ok_or_else(|| codes::e121(&display))
         }
     }
+}
+
+/// Source the autoload script for a `prefix#name` variable or function once.
+fn autoload_for(ctx: &mut Ctx, name: &str) -> Result<()> {
+    let Some((prefix, _)) = name.split_once('#') else {
+        return Ok(());
+    };
+    if prefix.is_empty() {
+        return Ok(());
+    }
+    let expected = format!("autoload/{prefix}.vim");
+    if ctx.runtime.has_script_name(&expected) {
+        return Ok(());
+    }
+    if let Some((path, bytes)) = ctx.host.autoload_script(prefix)? {
+        crate::script::run_sourced_script(ctx, &path, &bytes)?;
+    }
+    Ok(())
 }
 
 fn whole_scope(ctx: &mut Ctx, scope: Option<Scope>, display: &str) -> Result<Value> {

@@ -173,6 +173,19 @@ impl VimRuntime {
             self.vvars
                 .set_str(name, Value::String(VimString::from(value)));
         }
+        // v:lang mirrors the locale Vim reports (e.g. runtime/syntax/help_ru.vim
+        // checks it).  Strip the encoding/modifier part like Vim does.
+        let locale = std::env::var("LC_ALL")
+            .or_else(|_| std::env::var("LC_CTYPE"))
+            .or_else(|_| std::env::var("LANG"))
+            .unwrap_or_else(|_| "C".to_string());
+        let lang = locale
+            .split(['.', '@'])
+            .next()
+            .filter(|part| !part.is_empty())
+            .unwrap_or("C");
+        self.vvars
+            .set_str("lang", Value::String(VimString::from(lang)));
         self.vvars.set_str("true", Value::Bool(true));
         self.vvars.set_str("false", Value::Bool(false));
         self.vvars
@@ -288,6 +301,17 @@ impl VimRuntime {
         }
     }
 
+    /// Push an existing script id as the active script context (used when a
+    /// user command defined in a script runs its replacement text).
+    pub fn push_context_script(&mut self, id: ScriptId) {
+        self.script_stack.push(id);
+    }
+
+    /// Pop a context pushed with [VimRuntime::push_context_script].
+    pub fn pop_context_script(&mut self) {
+        self.script_stack.pop();
+    }
+
     pub fn current_script_id(&self) -> Option<ScriptId> {
         if let Some(frame) = self.frames.last() {
             if !frame.script_id.is_nil() {
@@ -303,6 +327,11 @@ impl VimRuntime {
 
     pub fn script_vars(&self, id: ScriptId) -> Option<DictRef> {
         self.scripts.get(id).map(|script| script.vars.clone())
+    }
+
+    /// True when a script with exactly this name was already sourced.
+    pub fn has_script_name(&self, name: &str) -> bool {
+        self.scripts.iter().any(|(_, script)| script.name == name)
     }
 
     pub fn script_ids(&self) -> Vec<ScriptId> {

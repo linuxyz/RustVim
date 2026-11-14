@@ -9,6 +9,24 @@ pub fn command_abbrev(name: &str) -> Option<&'static str> {
         .map(|(_, least)| *least)
 }
 
+/// Resolve a command prefix to its full name.
+///
+/// Vim accepts any unambiguous prefix down to each command's documented
+/// minimum abbreviation and resolves ambiguity to the first match in command
+/// table order.  This lets runtime files use spellings such as `sy` (syntax)
+/// or `synt` (syntax) that are not listed in the dispatch match arms.
+pub fn resolve_command_name(name: &str) -> Option<&'static str> {
+    for spec in ALL_COMMANDS {
+        let Some(least) = command_abbrev(spec.name) else {
+            continue;
+        };
+        if name.len() >= least.len() && spec.name.starts_with(name) {
+            return Some(spec.name);
+        }
+    }
+    None
+}
+
 pub fn command_metadata(name: &str) -> Option<&'static NameSpec> {
     ALL_COMMANDS
         .iter()

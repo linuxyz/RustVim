@@ -259,6 +259,11 @@ impl HighlightTable {
         Self { groups }
     }
 
+    /// True when the group is defined.
+    pub fn contains(&self, group: &str) -> bool {
+        self.groups.contains_key(group)
+    }
+
     pub fn get(&self, group: &str) -> Attr {
         self.groups.get(group).copied().unwrap_or_default()
     }

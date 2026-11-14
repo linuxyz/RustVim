@@ -359,6 +359,13 @@ pub struct Editor {
     pub input_stack: Vec<std::collections::VecDeque<rvim_viml::Value>>,
     pub last_mouse: Option<(u16, u16)>,
     pub sourced_scripts: Vec<(u64, String)>,
+    /// Path of the script currently being sourced, used to expand `<sfile>`.
+    pub(crate) script_file: Option<String>,
+    /// Script id of the Ex command currently executing.  User commands record
+    /// it so their replacement text runs in the defining script's context.
+    pub(crate) viml_script_context: Option<rvim_types::ScriptId>,
+    /// When set, the next `source_viml` call executes as that script.
+    pub(crate) viml_script_override: Option<rvim_types::ScriptId>,
     /// Optional category-based diagnostics log (see [`crate::trace`]).
     pub trace: crate::trace::Trace,
     next_script_id: u64,
@@ -553,6 +560,9 @@ impl Editor {
             input_stack: Vec::new(),
             last_mouse: None,
             sourced_scripts: Vec::new(),
+            script_file: None,
+            viml_script_context: None,
+            viml_script_override: None,
             trace: crate::trace::Trace::default(),
             next_script_id: 0,
             cmdwin: None,
@@ -2047,10 +2057,17 @@ impl Editor {
         self.trace
             .log("viml", &format!("source {name} ({} bytes)", source.len()));
         let source = apply_scriptencoding(source);
+        let previous_script_file = self.script_file.replace(name.to_string());
+        let override_script = self.viml_script_override.take();
         let mut runtime = std::mem::take(&mut self.viml);
         let vars = std::mem::take(&mut self.viml_vars);
         let mut host = crate::viml_host::EditorVimHost::new(self, vars);
-        let result = rvim_viml::execute_script(&source, name, &mut runtime, &mut host);
+        let result = match override_script {
+            Some(script_id) => {
+                rvim_viml::execute_script_in_context(&source, script_id, &mut runtime, &mut host)
+            }
+            None => rvim_viml::execute_script(&source, name, &mut runtime, &mut host),
+        };
         let vars = std::mem::take(&mut host.vars);
         drop(host);
         self.viml = runtime;
@@ -2061,6 +2078,7 @@ impl Editor {
             self.sourced_scripts
                 .push((self.next_script_id, name.to_string()));
         }
+        self.script_file = previous_script_file;
         result.map_err(|error| VimError::plain(error.to_string()))
     }
 

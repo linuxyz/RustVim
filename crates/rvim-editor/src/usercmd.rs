@@ -10,6 +10,9 @@ pub enum Nargs {
 #[derive(Clone, Debug)]
 pub struct UserCommand {
     pub name: String,
+    /// Script the command was defined in; its replacement text runs in that
+    /// script's `s:` context like Vim does.
+    pub script_id: Option<rvim_types::ScriptId>,
     pub bang: bool,
     pub nargs: Nargs,
     pub range: bool,
@@ -42,7 +45,18 @@ impl UserCommand {
         let mut out = self.replacement.clone();
         out = out.replace("<bang>", if bang { "!" } else { "" });
         out = out.replace("<args>", args);
-        out = out.replace("<q-args>", args);
+        // Vim's <q-args> is the argument text quoted for use in an
+        // expression: a double-quoted string with '\' and '"' escaped.
+        let mut quoted = String::with_capacity(args.len() + 2);
+        quoted.push('"');
+        for character in args.chars() {
+            if matches!(character, '\\' | '"') {
+                quoted.push('\\');
+            }
+            quoted.push(character);
+        }
+        quoted.push('"');
+        out = out.replace("<q-args>", &quoted);
         out = out.replace(
             "<f-args>",
             &args

@@ -49,25 +49,45 @@ Local run against the pinned v9.2.1338 runtime (2026-11-14):
 | Tier | Passed | Total | Failures |
 |---|---|---|---|
 | A | 14 | 14 | 0 |
-| B | 45 | 48 | 3 |
-| C | 461 | 790 | 329 |
+| B | 47 | 48 | 1 |
+| C | 764 | 790 | 26 |
+
+Tier A is the CI gate; the remaining Tier B and Tier C failures are classified
+below.
 
 ## Explicit gap list
 
 The failures above are the current, honest gap list.  They cluster in:
 
-1. **Regex dialect edges in syntax files**: trailing backslashes
-   (`E14: Trailing backslash`), `\z`/`\%` contextual atoms and `\(`
-   groups used with Vim's magic rules need broader regex support
-   (`unsupported atom`, `E54`).
-2. **Script expression edges**: some syntax/compiler files use expressions
-   (comparisons, `version`, autoload calls) that the legacy VimL interpreter
-   evaluates strictly; `E015`, `E121`, `E117: Unknown function:
-   executable`.
-3. **Feature-gated options**: P2 features such as folds are absent, so
-   `E518: Unknown option: foldmethod` appears in files that set fold options.
-4. **Missing runtime files in user-local trees**: `E013` when a syntax file
-   sources a component that does not exist in the pinned tree.
+1. **Vim9 script runtime files (18 checks).** Vim 9.2 converted a number of
+   runtime files to Vim9 script (`vim9script`, `def`, `import`), including
+   several syntax files (2html, context, csv, hare, haredoc, hitest, hlsl, mf,
+   mp, odin, omnimark, tsv, java, antlr, javacc, aidl, sqlj, xpm among the
+   affected checks) and `compiler/context.vim`.  Vim9 script is deliberately
+   out of scope for RVim (like the terminal emulator); these files now report
+   `E319` instead of being silently skipped.
+2. **Vim 9.2 interpolated strings (4 syntax files).** `$'...'` and
+   `$"..."` string interpolation (help.vim, icalendar.vim, modula3.vim,
+   pkl.vim) is a Vim 9.2 language feature that the legacy VimL engine does not
+   implement yet.
+3. **Dynamic `:let {expr}name` variable names (3 syntax files).**
+   liquid.vim, livebook.vim and markdown.vim build names such as
+   `b:{matchstr(s:type,'[^.]*')}_subtype`; dynamic variable names in
+   `:let` are not implemented.
+4. **Known harness artefact (1 check).** `syntax/glimmer.vim` requires
+   `b:current_syntax` to have been set by a previously loaded JavaScript or
+   TypeScript syntax file.  Sourcing it standalone fails in Vim 9.1 as well
+   (exit status 1), so the check is environment dependent rather than an RVim
+   gap.
+
+Shared documented approximations behind these numbers:
+
+- Regex collections containing multi-byte characters accept any UTF-8 byte of
+  the character instead of matching the whole character, and contextual atoms
+  (`\%#`, `\%V`, line/column atoms) compile but never match because the
+  regex crate has no editor context.
+- Fold and conceal options are accepted and stored, but folding and
+  concealment remain P2 features (`has('folding')` is still 0).
 
 Tier C is explicitly *not* a release gate: P1 targets core editing, help and
 syntax, and the gap list above tracks the remaining work towards Tier C.

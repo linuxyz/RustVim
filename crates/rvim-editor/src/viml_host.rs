@@ -2985,10 +2985,78 @@ impl VimHost for EditorVimHost<'_> {
         self.editor.messages.error(error.to_string());
     }
 
-    fn execute_ex(&mut self, command: &str, _context: &ExContext) -> VimResult<Value> {
-        self.editor
-            .execute_ex_line(command)
-            .map_err(|error| VimError::new(error.code.unwrap_or(0), error.message))?;
+    fn highlight_id(&mut self, name: &str) -> VimResult<i64> {
+        if self.editor.highlights.contains(name) {
+            // Stable pseudo id: the group's sorted position + 1.
+            let mut groups: Vec<&str> = self
+                .editor
+                .highlights
+                .iter()
+                .map(|(group, _)| group)
+                .collect();
+            groups.sort_unstable();
+            let id = groups
+                .iter()
+                .position(|group| *group == name)
+                .map(|position| position as i64 + 1)
+                .unwrap_or(0);
+            return Ok(id);
+        }
+        Ok(0)
+    }
+
+    fn system_output(&mut self, command: &str) -> VimResult<Vec<u8>> {
+        let output = self
+            .editor
+            .run_shell(command, None)
+            .map_err(|error| VimError::plain(error.to_string()))?;
+        Ok(output.stdout)
+    }
+
+    fn runtime_files(&mut self, pattern: &str, all: bool) -> VimResult<Vec<(String, Vec<u8>)>> {
+        let paths = if all {
+            self.editor.runtime.find_all(pattern)
+        } else {
+            self.editor.runtime.find(pattern).into_iter().collect()
+        };
+        let mut files = Vec::new();
+        for path in paths {
+            let bytes = rvim_platform::fs::read_file(&path)
+                .map_err(|error| VimError::new(13, error.to_string()))?;
+            files.push((path.display().to_string(), bytes));
+        }
+        Ok(files)
+    }
+
+    fn autoload_script(&mut self, prefix: &str) -> VimResult<Option<(String, Vec<u8>)>> {
+        let pattern = format!("autoload/{prefix}.vim");
+        let Some(path) = self.editor.runtime.find(&pattern) else {
+            return Ok(None);
+        };
+        let bytes = rvim_platform::fs::read_file(&path)
+            .map_err(|error| VimError::new(13, error.to_string()))?;
+        Ok(Some((path.display().to_string(), bytes)))
+    }
+
+    fn user_command_expansion(
+        &mut self,
+        line: &str,
+    ) -> VimResult<Option<(String, Option<rvim_types::ScriptId>)>> {
+        crate::ex::expand_user_command_line(self.editor, line)
+            .map_err(|error| VimError::new(error.code.unwrap_or(0), error.message))
+    }
+
+    fn execute_ex(&mut self, command: &str, context: &ExContext) -> VimResult<Value> {
+        let context_script = if context.script_id.is_nil() {
+            None
+        } else {
+            Some(context.script_id)
+        };
+        let previous = self.editor.viml_script_context;
+        self.editor.viml_script_context = context_script;
+        let result = self.editor.execute_ex_line(command);
+        self.editor.viml_script_context = previous;
+        result.map_err(|error| VimError::new(error.code.unwrap_or(0), error.message))?;
         Ok(Value::Number(0))
     }
 

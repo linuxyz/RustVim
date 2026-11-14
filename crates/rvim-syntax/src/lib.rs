@@ -19,12 +19,22 @@ enum Matcher {
     Pattern(Regex),
 }
 
+/// End pattern of a region.  Patterns with `\z1`..`\z9` references are kept
+/// as source and compiled after the start match, with the matched text of the
+/// corresponding `\z(` groups substituted.
+#[derive(Clone, Debug)]
+enum RegionEnd {
+    Static(Regex),
+    /// Raw pattern source containing \z1..\z9 references.
+    Dynamic(Vec<u8>),
+}
+
 #[derive(Clone, Debug)]
 struct Item {
     group: String,
     matcher: Matcher,
     words: Vec<Vec<u8>>,
-    region_end: Option<Regex>,
+    region_end: Option<RegionEnd>,
     matchgroup: Option<String>,
     oneline: bool,
     nextgroup: Vec<String>,
@@ -169,41 +179,64 @@ impl SyntaxEngine {
                 let mut contains = Vec::new();
                 let mut containedin = Vec::new();
                 let mut contained = false;
-                for token in options.split_whitespace() {
-                    if let Some(value) = token.strip_prefix("start=") {
-                        start = Some(
-                            compile(take_pattern(value).as_bytes(), Magic::Magic, false)
-                                .map_err(|e| e.message)?,
-                        );
-                    } else if let Some(value) = token.strip_prefix("end=") {
-                        end = Some(
-                            compile(take_pattern(value).as_bytes(), Magic::Magic, false)
-                                .map_err(|e| e.message)?,
-                        );
-                    } else if let Some(value) = token.strip_prefix("matchgroup=") {
-                        matchgroup = Some(value.to_string());
-                    } else if token == "contained" {
-                        contained = true;
-                    } else if token == "oneline" {
-                        oneline = true;
-                    } else if let Some(value) = token.strip_prefix("nextgroup=") {
-                        nextgroup = value
-                            .split(',')
-                            .filter(|group| !group.is_empty())
-                            .map(str::to_string)
-                            .collect();
-                    } else if let Some(value) = token.strip_prefix("contains=") {
-                        contains = value
-                            .split(',')
-                            .filter(|group| !group.is_empty())
-                            .map(str::to_string)
-                            .collect();
-                    } else if let Some(value) = token.strip_prefix("containedin=") {
-                        containedin = value
-                            .split(',')
-                            .filter(|group| !group.is_empty())
-                            .map(str::to_string)
-                            .collect();
+                // Patterns may contain whitespace (inside [] or between
+                // literal characters) and delimiters inside collections, so
+                // options cannot be tokenized with split_whitespace().
+                let bytes = options.as_bytes();
+                let mut index = 0;
+                while index < bytes.len() {
+                    while index < bytes.len() && bytes[index].is_ascii_whitespace() {
+                        index += 1;
+                    }
+                    if index >= bytes.len() {
+                        break;
+                    }
+                    let name_start = index;
+                    while index < bytes.len()
+                        && !bytes[index].is_ascii_whitespace()
+                        && bytes[index] != b'='
+                    {
+                        index += 1;
+                    }
+                    let name = &options[name_start..index];
+                    if index < bytes.len() && bytes[index] == b'=' {
+                        index += 1;
+                        if matches!(name, "start" | "end" | "skip") {
+                            let (pattern, consumed) = take_pattern_with_end(&options[index..]);
+                            index += consumed;
+                            while index < bytes.len() && !bytes[index].is_ascii_whitespace() {
+                                index += 1;
+                            }
+                            match name {
+                                "start" => {
+                                    start = Some(
+                                        compile(pattern.as_bytes(), Magic::Magic, false)
+                                            .map_err(|e| e.message)?,
+                                    )
+                                }
+                                "end" => end = Some(compile_region_end(pattern)?),
+                                _ => {}
+                            }
+                        } else {
+                            let value_start = index;
+                            while index < bytes.len() && !bytes[index].is_ascii_whitespace() {
+                                index += 1;
+                            }
+                            let value = &options[value_start..index];
+                            match name {
+                                "matchgroup" => matchgroup = Some(value.to_string()),
+                                "nextgroup" => nextgroup = split_groups(value),
+                                "contains" => contains = split_groups(value),
+                                "containedin" => containedin = split_groups(value),
+                                _ => {}
+                            }
+                        }
+                    } else {
+                        match name {
+                            "contained" => contained = true,
+                            "oneline" => oneline = true,
+                            _ => {}
+                        }
                     }
                 }
                 let start = start.ok_or_else(|| "E475: Missing start".to_string())?;
@@ -279,7 +312,10 @@ impl SyntaxEngine {
                 continue;
             }
             if let Some(end_pattern) = &item.region_end {
-                if let Some(end) = end_pattern.find_at(line, found.end, true) {
+                let Some(end_regex) = resolve_region_end(end_pattern, pattern, &found, line) else {
+                    continue;
+                };
+                if let Some(end) = end_regex.find_at(line, found.end, true) {
                     spans.push(Span {
                         start: found.start,
                         end: end.end,
@@ -381,7 +417,11 @@ impl SyntaxEngine {
                     {
                         continue;
                     }
-                    if let Some(end) = end_pattern.find_at(line, start.end, true) {
+                    let Some(end_regex) = resolve_region_end(end_pattern, pattern, &start, line)
+                    else {
+                        continue;
+                    };
+                    if let Some(end) = end_regex.find_at(line, start.end, true) {
                         if let Some(matchgroup) = &item.matchgroup {
                             spans.push(Span {
                                 start: start.start,
@@ -417,7 +457,7 @@ impl SyntaxEngine {
                         if !item.oneline {
                             active.push(RegionState {
                                 group: item.group.clone(),
-                                end: Some(end_pattern.clone()),
+                                end: Some(end_regex.clone()),
                                 matchgroup: item.matchgroup.clone(),
                                 contains: item.contains.clone(),
                             });
@@ -482,25 +522,175 @@ impl SyntaxEngine {
     }
 }
 
-fn take_pattern(value: &str) -> &str {
-    let value = value.trim_start();
-    let bytes = value.as_bytes();
-    if bytes.is_empty() || bytes[0].is_ascii_alphanumeric() || bytes[0] == b'\\' {
-        return value.split_whitespace().next().unwrap_or("");
-    }
-    let delimiter = bytes[0];
-    let mut index = 1;
-    while index < bytes.len() {
-        if bytes[index] == b'\\' {
-            index += 2;
-            continue;
-        }
-        if bytes[index] == delimiter {
-            return &value[1..index];
+fn has_z_reference(bytes: &[u8]) -> bool {
+    let mut index = 0;
+    while index + 2 < bytes.len() {
+        if bytes[index] == b'\\' && bytes[index + 1] == b'z' && bytes[index + 2].is_ascii_digit() {
+            return true;
         }
         index += 1;
     }
+    false
+}
+
+fn compile_region_end(pattern: &str) -> Result<RegionEnd, String> {
+    let bytes = pattern.as_bytes();
+    if has_z_reference(bytes) {
+        return Ok(RegionEnd::Dynamic(bytes.to_vec()));
+    }
+    compile(bytes, Magic::Magic, false)
+        .map(RegionEnd::Static)
+        .map_err(|error| error.message)
+}
+
+/// Resolve a region end pattern for one start match.
+///
+/// Static patterns are shared; dynamic patterns substitute the text matched by
+/// the start pattern's \z( groups for the \z1..\z9 references.
+fn resolve_region_end(
+    end: &RegionEnd,
+    start_pattern: &Regex,
+    start_match: &rvim_regex::Match,
+    haystack: &[u8],
+) -> Option<Regex> {
+    match end {
+        RegionEnd::Static(regex) => Some(regex.clone()),
+        RegionEnd::Dynamic(source) => {
+            let slots = start_pattern.z_group_slots();
+            let mut pattern = Vec::with_capacity(source.len());
+            let mut index = 0;
+            while index < source.len() {
+                if source[index] == b'\\'
+                    && index + 2 < source.len()
+                    && source[index + 1] == b'z'
+                    && source[index + 2].is_ascii_digit()
+                {
+                    let group = usize::from(source[index + 2] - b'0');
+                    if (1..=slots.len()).contains(&group) {
+                        let slot = slots[group - 1];
+                        if let Some(Some((start, end))) = start_match.captures.get(slot) {
+                            escape_literal(&mut pattern, &haystack[*start..*end]);
+                        }
+                        index += 3;
+                        continue;
+                    }
+                    return None;
+                }
+                pattern.push(source[index]);
+                index += 1;
+            }
+            compile(&pattern, Magic::Magic, false).ok()
+        }
+    }
+}
+
+fn escape_literal(out: &mut Vec<u8>, bytes: &[u8]) {
+    for &byte in bytes {
+        if matches!(
+            byte,
+            b'\\' | b'.' | b'*' | b'[' | b']' | b'^' | b'$' | b'~' | b'/'
+        ) {
+            out.push(b'\\');
+        }
+        out.push(byte);
+    }
+}
+
+fn split_groups(value: &str) -> Vec<String> {
     value
+        .split(',')
+        .filter(|group| !group.is_empty())
+        .map(str::to_string)
+        .collect()
+}
+
+fn take_pattern(value: &str) -> &str {
+    take_pattern_with_end(value).0
+}
+
+/// Extract a `:syntax` pattern argument.
+///
+/// The pattern is delimited by its first character when that is not
+/// alphanumeric or a backslash.  Escapes and `[...]` collections are skipped
+/// exactly like Vim's skip_regexp(), so a delimiter inside a collection does
+/// not terminate the pattern.  Returns the pattern and the number of bytes
+/// consumed from `value`, including the closing delimiter.
+fn take_pattern_with_end(value: &str) -> (&str, usize) {
+    let value = value.trim_start();
+    let bytes = value.as_bytes();
+    if bytes.is_empty() || bytes[0].is_ascii_alphanumeric() || bytes[0] == b'\\' {
+        let end = value.find(char::is_whitespace).unwrap_or(value.len());
+        return (&value[..end], end);
+    }
+    let delimiter = bytes[0];
+    match find_delimiter_end(bytes, delimiter) {
+        Some(end) => (&value[1..end], end + 1),
+        None => (value, value.len()),
+    }
+}
+
+fn find_delimiter_end(bytes: &[u8], delimiter: u8) -> Option<usize> {
+    let mut magic = true;
+    let mut index = 1;
+    while index < bytes.len() {
+        let byte = bytes[index];
+        if byte == delimiter {
+            return Some(index);
+        }
+        if byte == b'[' && magic {
+            index = skip_collection(bytes, index + 1);
+            continue;
+        }
+        if byte == b'\\' && index + 1 < bytes.len() {
+            match bytes[index + 1] {
+                b'v' => magic = true,
+                b'V' => magic = false,
+                _ => {}
+            }
+            index += 2;
+            continue;
+        }
+        index += 1;
+    }
+    None
+}
+
+/// Return the index just past the closing `]` of a collection.
+fn skip_collection(bytes: &[u8], mut index: usize) -> usize {
+    if index < bytes.len() && bytes[index] == b'^' {
+        index += 1;
+    }
+    if index < bytes.len() && (bytes[index] == b']' || bytes[index] == b'-') {
+        index += 1;
+    }
+    while index < bytes.len() && bytes[index] != b']' {
+        match bytes[index] {
+            b'\\' => index += 2,
+            b'-' => {
+                index += 1;
+                if index < bytes.len() && bytes[index] != b']' {
+                    index += 1;
+                }
+            }
+            b'[' if index + 1 < bytes.len() && matches!(bytes[index + 1], b':' | b'=' | b'.') => {
+                let marker = bytes[index + 1];
+                let mut scan = index + 2;
+                while scan + 1 < bytes.len() {
+                    if bytes[scan] == marker && bytes[scan + 1] == b']' {
+                        scan += 2;
+                        break;
+                    }
+                    scan += 1;
+                }
+                index = scan;
+            }
+            _ => index += 1,
+        }
+    }
+    if index < bytes.len() {
+        index += 1;
+    }
+    index
 }
 
 fn is_word(byte: u8) -> bool {

@@ -21,6 +21,9 @@ pub(crate) enum Anchor {
     TextStart,
     /// `\%$`.
     TextEnd,
+    /// An atom that needs editor context this engine does not have
+    /// (`\%#`, `\%V`, line/column/mark atoms).  It never matches.
+    Never,
 }
 
 /// Kinds of look-around assertions.

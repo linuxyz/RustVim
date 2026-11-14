@@ -172,6 +172,38 @@ pub trait VimHost {
     }
 
     /// Run an Ex command that the VimL engine does not implement itself.
+    /// Expand a line that invokes an editor user command.
+    ///
+    /// Returns the replacement text and the script id the command was defined
+    /// in (if any), so the caller can run it in the defining script's `s:`
+    /// context instead of creating a nested script context.
+    fn user_command_expansion(
+        &mut self,
+        _line: &str,
+    ) -> Result<Option<(String, Option<ScriptId>)>> {
+        Ok(None)
+    }
+
+    /// Highlight group id for `hlID()`; 0 when the group is not defined.
+    fn highlight_id(&mut self, _name: &str) -> Result<i64> {
+        Ok(0)
+    }
+
+    /// Standard output of a shell command, used by `system()`/`systemlist()`.
+    fn system_output(&mut self, _command: &str) -> Result<Vec<u8>> {
+        Err(unsupported("system()"))
+    }
+
+    /// Files matched by a `:runtime` / `:runtime!` pattern: (name, bytes).
+    fn runtime_files(&mut self, _pattern: &str, _all: bool) -> Result<Vec<(String, Vec<u8>)>> {
+        Ok(Vec::new())
+    }
+
+    /// Bytes of the autoload script that defines `prefix#...` names.
+    fn autoload_script(&mut self, _prefix: &str) -> Result<Option<(String, Vec<u8>)>> {
+        Ok(None)
+    }
+
     fn execute_ex(&mut self, command: &str, context: &ExContext) -> Result<Value> {
         let _ = context;
         Err(codes::e492(command))

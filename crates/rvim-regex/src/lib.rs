@@ -154,6 +154,8 @@ pub struct Match {
 pub struct Regex {
     pub(crate) programs: Vec<compiler::Program>,
     pub(crate) groups: usize,
+    /// Capture slot for each syntax group declared with `\z(`.
+    pub(crate) z_groups: Vec<usize>,
     pub(crate) ignorecase: bool,
     pub(crate) step_limit: u64,
 }
@@ -170,6 +172,7 @@ pub fn compile(pattern: &[u8], magic: Magic, ignorecase: bool) -> Result<Regex, 
     Ok(Regex {
         programs,
         groups: parsed.groups,
+        z_groups: parsed.z_groups,
         ignorecase: parsed.force_ignorecase.unwrap_or(ignorecase),
         step_limit: DEFAULT_STEP_LIMIT,
     })
@@ -206,6 +209,15 @@ impl Regex {
     /// Number of capturing groups in the pattern.
     pub fn group_count(&self) -> usize {
         self.groups
+    }
+
+    /// Capture slots of the pattern's `\z(` groups, in declaration order.
+    ///
+    /// The slots index into `Match::captures`.  This is used by the syntax
+    /// highlighter, where `\z1` in a later region pattern refers back to the
+    /// text matched by the first `\z(` group of the start pattern.
+    pub fn z_group_slots(&self) -> &[usize] {
+        &self.z_groups
     }
 
     /// Whether this compiled pattern matches ASCII case-insensitively.
@@ -388,8 +400,9 @@ mod tests {
         assert_eq!(find("[\\u0041]", "A"), Some((0, 1)));
         assert_eq!(find("[\\U00000041]", "A"), Some((0, 1)));
         assert_eq!(find("[\\e]", "\u{1b}"), Some((0, 1)));
-        let error = compile(b"[\\u0100]", Magic::Magic, false).unwrap_err();
-        assert!(error.message.contains("byte range"));
+        // Multi-byte code points in a collection are accepted; the byte engine
+        // approximates them by their UTF-8 bytes (see the crate docs).
+        assert!(compile(b"[\\u0100]", Magic::Magic, false).is_ok());
     }
 
     #[test]
@@ -436,8 +449,9 @@ mod tests {
         assert_eq!(find_magic("~", "~", Magic::Nomagic), Some((0, 1)));
         assert_eq!(find_magic("~", "~", Magic::VeryNomagic), Some((0, 1)));
         assert!(compile(b"\\~", Magic::Nomagic, false).is_err());
-        assert!(compile(b"\\&", Magic::Nomagic, false).is_err());
-        assert!(compile(b"\\&", Magic::VeryNomagic, false).is_err());
+        // \& is supported as a conjunction; in very nomagic it is literal.
+        assert!(compile(b"\\&", Magic::Nomagic, false).is_ok());
+        assert!(compile(b"\\&", Magic::VeryNomagic, false).is_ok());
         assert_eq!(find_magic("&", "&", Magic::Magic), Some((0, 1)));
     }
 
@@ -1162,23 +1176,57 @@ mod tests {
         assert!(error.message.contains("E554"));
         let error = compile(b"a\\zs*", Magic::Magic, false).unwrap_err();
         assert!(error.message.contains("E888"));
-        let error = compile(b"[z-a]", Magic::Magic, false).unwrap_err();
-        assert!(error.message.contains("E944"));
+        // Reverse ranges are treated as literal characters instead of E944,
+        // matching Vim's acceptance of runtime syntax patterns.
+        assert!(compile(b"[z-a]", Magic::Magic, false).is_ok());
         let error = compile(b"abc\\", Magic::Magic, false).unwrap_err();
         assert!(error.message.contains("E14"));
     }
 
     #[test]
     fn unsupported_atoms_fail_loudly() {
-        for pattern in [
-            "\\&", "~", "\\@>a", "\\z(a\\)", "\\Z", "\\%[abc]", "\\%#", "\\%d65", "\\%V",
-        ] {
-            let result = compile(pattern.as_bytes(), Magic::Magic, false);
-            assert!(result.is_err(), "expected {pattern:?} to be rejected");
-        }
+        let result = compile(b"~", Magic::Magic, false);
+        assert!(result.is_err(), "expected ~ to be rejected");
         assert!(compile(b"\\@>", Magic::Magic, false).is_err());
-        assert!(compile(b"\\v&", Magic::VeryMagic, false).is_err());
-        assert!(compile(b"\\v\\&", Magic::VeryMagic, false).is_ok());
+    }
+
+    #[test]
+    fn syntax_atoms_compile_and_match() {
+        // \z( groups are ordinary captures exposed through z_group_slots.
+        let regex = compile(b"\\z(a\\)b", Magic::Magic, false).unwrap();
+        assert_eq!(regex.z_group_slots(), &[1]);
+        let matched = regex.find(b"ab").unwrap();
+        assert_eq!(matched.captures[0], Some((0, 1)));
+
+        // \%[abc] matches the longest possible prefix.
+        let regex = compile(b"x\\%[abc]", Magic::Magic, false).unwrap();
+        assert_eq!(regex.find(b"xabc").map(|m| (m.start, m.end)), Some((0, 4)));
+        assert_eq!(regex.find(b"xa").map(|m| (m.start, m.end)), Some((0, 2)));
+
+        // \& requires both branches at the same position; the last branch is
+        // the one that is matched.
+        let regex = compile(b"foo\\&..", Magic::Magic, false).unwrap();
+        assert_eq!(
+            regex.find(b"foobar").map(|m| (m.start, m.end)),
+            Some((0, 2))
+        );
+
+        // \%d / \%x character escapes.
+        assert_eq!(
+            compile(b"\\%d65", Magic::Magic, false)
+                .unwrap()
+                .find(b"xAy")
+                .map(|m| (m.start, m.end)),
+            Some((1, 2))
+        );
+
+        // Engine selector and contextual atoms are accepted; the latter never
+        // match because the regex crate has no editor context.
+        assert!(compile(b"\\%#=1abc", Magic::Magic, false).is_ok());
+        assert!(compile(b"a\\%#b", Magic::Magic, false)
+            .unwrap()
+            .find(b"ab")
+            .is_none());
     }
 
     #[test]

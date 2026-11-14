@@ -13,6 +13,8 @@ use crate::Magic;
 pub(crate) struct Parsed {
     pub(crate) ast: Ast,
     pub(crate) groups: usize,
+    /// Capture slots for `\z(` groups, indexed by syntax-group number - 1.
+    pub(crate) z_groups: Vec<usize>,
     /// Result of \c / \C.  A \c anywhere wins over \C, matching Vim.
     pub(crate) force_ignorecase: Option<bool>,
 }
@@ -22,6 +24,7 @@ struct Parser<'a> {
     pos: usize,
     magic: Magic,
     groups: usize,
+    z_groups: Vec<usize>,
     at_branch_start: bool,
     saw_ignorecase: bool,
     saw_matchcase: bool,
@@ -71,6 +74,7 @@ pub(crate) fn parse(pattern: &[u8], magic: Magic) -> Result<Parsed, RegexError> 
         pos: 0,
         magic,
         groups: 0,
+        z_groups: Vec::new(),
         at_branch_start: true,
         saw_ignorecase: false,
         saw_matchcase: false,
@@ -94,6 +98,7 @@ impl<'a> Parser<'a> {
         Ok(Parsed {
             ast,
             groups: self.groups,
+            z_groups: self.z_groups,
             force_ignorecase,
         })
     }
@@ -101,8 +106,7 @@ impl<'a> Parser<'a> {
     fn parse_alt(&mut self) -> Result<Ast, RegexError> {
         let mut branches = Vec::new();
         loop {
-            let branch = self.parse_concat()?;
-            branches.push(branch);
+            branches.push(self.parse_branch()?);
             if !self.eat_alt() {
                 break;
             }
@@ -113,6 +117,31 @@ impl<'a> Parser<'a> {
             1 => Ok(branches.remove(0)),
             _ => Ok(Ast::Alt(branches)),
         }
+    }
+
+    /// A branch is one or more concats separated by `\&`.  It matches the
+    /// last concat, but only if all preceding concats also match at the same
+    /// position (identical to wrapping them in `\@=`).
+    fn parse_branch(&mut self) -> Result<Ast, RegexError> {
+        let mut concats = vec![self.parse_concat()?];
+        while self.eat_conjunction() {
+            self.at_branch_start = true;
+            concats.push(self.parse_concat()?);
+        }
+        if concats.len() == 1 {
+            return Ok(concats.remove(0));
+        }
+        let last = concats.pop().expect("at least two concats");
+        let mut pieces: Vec<Ast> = concats
+            .into_iter()
+            .map(|node| Ast::Look {
+                kind: LookKind::Ahead,
+                node: Box::new(node),
+                limit: None,
+            })
+            .collect();
+        pieces.push(last);
+        Ok(Ast::Concat(pieces))
     }
 
     fn parse_concat(&mut self) -> Result<Ast, RegexError> {
@@ -379,7 +408,12 @@ impl<'a> Parser<'a> {
             b'_' => self.parse_underscore(offset),
             b'z' => {
                 self.pos += 1;
+                // Vim also accepts a redundant backslash: "\z\(".
+                if self.peek() == Some(b'\\') && self.peek_at(1) == Some(b'(') {
+                    self.pos += 1;
+                }
                 match self.peek() {
+                    Some(b'(') => self.parse_z_group(offset),
                     Some(b's') => {
                         self.pos += 1;
                         Ok(Ast::SetStart)
@@ -391,10 +425,12 @@ impl<'a> Parser<'a> {
                     _ => Err(self.err("unsupported atom: \\z (syntax group)", offset)),
                 }
             }
-            b'Z' => Err(self.err(
-                "unsupported atom: \\Z (composing character folding)",
-                offset,
-            )),
+            // \Z matches composing characters; this byte-oriented engine has
+            // no composing-character model, so approximate it with a no-op.
+            b'Z' => {
+                self.pos += 1;
+                Ok(Ast::Empty)
+            }
             b'%' => {
                 if self.magic == Magic::VeryMagic {
                     self.pos += 1;
@@ -583,6 +619,11 @@ impl<'a> Parser<'a> {
                 self.pos += 1;
                 self.parse_group(false, offset)
             }
+            // Vim also accepts a redundant backslash: "\%\(pattern\)".
+            b'\\' if self.peek_at(1) == Some(b'(') => {
+                self.pos += 2;
+                self.parse_group(false, offset)
+            }
             b'^' => {
                 self.pos += 1;
                 Ok(Ast::Anchor(Anchor::TextStart))
@@ -591,20 +632,159 @@ impl<'a> Parser<'a> {
                 self.pos += 1;
                 Ok(Ast::Anchor(Anchor::TextEnd))
             }
-            // TODO(rvim-regex): the remaining \% constructs are deliberately
-            // rejected for now; see the crate docs.  Implementing them needs
-            // editor context (cursor, marks, visual area, line/column) or
-            // optional-sequence matching.
-            b'[' => Err(self.err("unsupported atom: \\%[ (optional sequence)", offset)),
-            b'#' | b'V' | b'\'' | b'<' | b'>' | b'l' | b'c' | b'v' => {
-                Err(self.err("unsupported atom: contextual \\% atom", offset))
+            b'[' => {
+                self.pos += 1;
+                self.parse_optional_sequence(offset)
             }
-            b'C' => Err(self.err("unsupported atom: \\%C (composing characters)", offset)),
-            b'd' | b'x' | b'o' | b'u' | b'U' => {
-                Err(self.err("unsupported atom: numeric \\% character", offset))
+            b'#' => {
+                // \%#=1 and \%#=2 select a regexp engine and are zero width.
+                if self.peek_at(1) == Some(b'=')
+                    && matches!(self.peek_at(2), Some(b'1') | Some(b'2'))
+                {
+                    self.pos += 3;
+                    Ok(Ast::Empty)
+                } else {
+                    self.pos += 1;
+                    Ok(Ast::Anchor(Anchor::Never))
+                }
             }
-            _ => Err(self.err("E71: Invalid character after %", offset)),
+            // Contextual atoms need editor state this engine does not track;
+            // they compile but never match.
+            b'V' | b'C' => {
+                self.pos += 1;
+                Ok(Ast::Anchor(Anchor::Never))
+            }
+            b'\'' => {
+                self.pos += 1;
+                if self.peek().is_some() {
+                    self.pos += 1;
+                }
+                Ok(Ast::Anchor(Anchor::Never))
+            }
+            b'<' | b'>' => {
+                self.pos += 1;
+                if self.peek() == Some(b'.') {
+                    self.pos += 1;
+                }
+                while self.peek().is_some_and(|byte| byte.is_ascii_digit()) {
+                    self.pos += 1;
+                }
+                if matches!(self.peek(), Some(b'l') | Some(b'c') | Some(b'v')) {
+                    self.pos += 1;
+                }
+                Ok(Ast::Anchor(Anchor::Never))
+            }
+            b'd' => self.parse_percent_char(offset, 10, usize::MAX),
+            b'o' => self.parse_percent_char(offset, 8, usize::MAX),
+            b'x' => self.parse_percent_char(offset, 16, 2),
+            b'u' => self.parse_percent_char(offset, 16, 4),
+            b'U' => self.parse_percent_char(offset, 16, 8),
+            _ => {
+                if byte.is_ascii_digit() {
+                    // \%5l, \%5c, \%5v: line/column atoms.
+                    while self.peek().is_some_and(|byte| byte.is_ascii_digit()) {
+                        self.pos += 1;
+                    }
+                    if matches!(self.peek(), Some(b'l') | Some(b'c') | Some(b'v')) {
+                        self.pos += 1;
+                    }
+                    Ok(Ast::Anchor(Anchor::Never))
+                } else {
+                    Err(self.err("E71: Invalid character after %", offset))
+                }
+            }
         }
+    }
+
+    /// Parse \%[atoms]: match the longest possible prefix of the atoms.
+    fn parse_optional_sequence(&mut self, offset: usize) -> Result<Ast, RegexError> {
+        let mut items = Vec::new();
+        loop {
+            match self.peek() {
+                None => return Err(self.err("E69: Missing ] after \\%[", offset)),
+                Some(b']') => {
+                    self.pos += 1;
+                    break;
+                }
+                _ => {}
+            }
+            items.push(self.parse_atom(false)?);
+        }
+        if items.is_empty() {
+            return Err(self.err("E70: Empty \\%[]", offset));
+        }
+        let count = items.len();
+        let mut alternatives = Vec::new();
+        for length in (1..=count).rev() {
+            let parts: Vec<Ast> = items[..length].to_vec();
+            alternatives.push(if parts.len() == 1 {
+                parts[0].clone()
+            } else {
+                Ast::Concat(parts)
+            });
+        }
+        Ok(Ast::Repeat {
+            node: Box::new(Ast::Alt(alternatives)),
+            min: 0,
+            max: Some(1),
+            greedy: true,
+        })
+    }
+
+    /// Parse a \%d / \%o / \%x / \%u / \%U character atom.
+    fn parse_percent_char(
+        &mut self,
+        offset: usize,
+        radix: u32,
+        max_digits: usize,
+    ) -> Result<Ast, RegexError> {
+        self.pos += 1; // the base letter
+        let mut value: u32 = 0;
+        let mut digits = 0usize;
+        while digits < max_digits {
+            let Some(byte) = self.peek() else { break };
+            let Some(digit) = (byte as char).to_digit(radix) else {
+                break;
+            };
+            value = value.saturating_mul(radix).saturating_add(digit);
+            self.pos += 1;
+            digits += 1;
+        }
+        if digits == 0 {
+            return Err(self.err("E678: Invalid character after %", offset));
+        }
+        if value == 0 {
+            return Ok(Ast::Literal(b'\n'));
+        }
+        let character = char::from_u32(value)
+            .ok_or_else(|| self.err("E678: Invalid character after %", offset))?;
+        let mut buffer = [0u8; 4];
+        let encoded = character.encode_utf8(&mut buffer).as_bytes();
+        if encoded.len() == 1 {
+            return Ok(Ast::Literal(encoded[0]));
+        }
+        Ok(Ast::Concat(
+            encoded.iter().map(|byte| Ast::Literal(*byte)).collect(),
+        ))
+    }
+
+    /// Parse \z( ... \): a capturing group usable from later syntax patterns.
+    fn parse_z_group(&mut self, open_offset: usize) -> Result<Ast, RegexError> {
+        self.pos += 1; // '('
+        let index = self.groups + 1;
+        self.groups += 1;
+        self.z_groups.push(index);
+        self.at_branch_start = true;
+        let body = self.parse_alt()?;
+        if !self.at_group_close() {
+            return Err(self.err("E54: Unmatched \\(", open_offset));
+        }
+        self.eat_group_close();
+        self.at_branch_start = false;
+        Ok(Ast::Group {
+            index,
+            node: Box::new(body),
+        })
     }
 
     fn parse_percent_very_magic(&mut self, offset: usize) -> Result<Ast, RegexError> {
@@ -618,7 +798,36 @@ impl<'a> Parser<'a> {
             self.pos += 2;
             Ok(Ast::Anchor(Anchor::TextEnd))
         } else if self.starts_with(b"%[") {
-            Err(self.err("unsupported atom: %[ (optional sequence)", offset))
+            self.pos += 2;
+            self.parse_optional_sequence(offset)
+        } else if matches!(
+            self.peek_at(1),
+            Some(b'0'..=b'9') | Some(b'<') | Some(b'>') | Some(b'#') | Some(b'V')
+        ) {
+            // In very magic "%" takes the role of "\%": accept the
+            // line/column/cursor atoms.  They need editor context, so they
+            // compile as never-matching anchors.
+            self.pos += 1; // '%'
+            if matches!(self.peek(), Some(b'<') | Some(b'>')) {
+                self.pos += 1;
+                if self.peek() == Some(b'.') {
+                    self.pos += 1;
+                }
+            }
+            if self.peek() == Some(b'#') {
+                self.pos += 1;
+                if self.peek() == Some(b'=') && self.peek_at(1).is_some() {
+                    self.pos += 2;
+                    return Ok(Ast::Empty);
+                }
+            }
+            while self.peek().is_some_and(|byte| byte.is_ascii_digit()) {
+                self.pos += 1;
+            }
+            if matches!(self.peek(), Some(b'l') | Some(b'c') | Some(b'v')) {
+                self.pos += 1;
+            }
+            Ok(Ast::Anchor(Anchor::Never))
         } else {
             Err(self.err("E71: Invalid character after %", offset))
         }
@@ -856,19 +1065,35 @@ impl<'a> Parser<'a> {
                         .and_then(|v| v.checked_add(usize::from(digit - b'0')))
                         .ok_or_else(|| self.err("E59: Look-behind limit too large", offset))?;
                 }
-                if self.pattern.get(cursor) != Some(&b'<') {
-                    return Err(self.err("E59: Invalid character after @", offset));
-                }
-                cursor += 1;
                 let limit = if limit == 0 { None } else { Some(limit) };
+                // The numeric limit only matters for look-behind; "\@1=" is a
+                // plain look-ahead (runtime/syntax/typst.vim relies on this).
                 match self.pattern.get(cursor).copied() {
                     Some(b'=') => {
                         cursor += 1;
-                        LookTokenKind::Behind(limit)
+                        LookTokenKind::Ahead
                     }
                     Some(b'!') => {
                         cursor += 1;
-                        LookTokenKind::NotBehind(limit)
+                        LookTokenKind::NotAhead
+                    }
+                    Some(b'>') => {
+                        cursor += 1;
+                        LookTokenKind::Atomic
+                    }
+                    Some(b'<') => {
+                        cursor += 1;
+                        match self.pattern.get(cursor).copied() {
+                            Some(b'=') => {
+                                cursor += 1;
+                                LookTokenKind::Behind(limit)
+                            }
+                            Some(b'!') => {
+                                cursor += 1;
+                                LookTokenKind::NotBehind(limit)
+                            }
+                            _ => return Err(self.err("E59: Invalid character after @", offset)),
+                        }
                     }
                     _ => return Err(self.err("E59: Invalid character after @", offset)),
                 }
@@ -920,7 +1145,26 @@ impl<'a> Parser<'a> {
     }
 
     fn at_concat_end(&self) -> bool {
-        self.pos >= self.pattern.len() || self.at_alt() || self.at_group_close()
+        self.pos >= self.pattern.len()
+            || self.at_alt()
+            || self.at_group_close()
+            || self.at_conjunction()
+    }
+
+    fn at_conjunction(&self) -> bool {
+        match self.magic {
+            Magic::VeryMagic => self.peek() == Some(b'&'),
+            // "\&" is a magic atom in every other mode, including very nomagic.
+            Magic::Magic | Magic::Nomagic | Magic::VeryNomagic => self.starts_with(b"\\&"),
+        }
+    }
+
+    fn eat_conjunction(&mut self) -> bool {
+        if !self.at_conjunction() {
+            return false;
+        }
+        self.pos += if self.magic == Magic::VeryMagic { 1 } else { 2 };
+        true
     }
 
     fn dollar_is_special(&self) -> bool {
@@ -989,10 +1233,13 @@ impl<'a> Parser<'a> {
                         match end_item {
                             ClassItem::Byte(high) => {
                                 if low > high {
-                                    return Err(self.err(
-                                        "E944: Reverse range in character class",
-                                        dash_offset,
-                                    ));
+                                    // Vim's legacy engine accepts such patterns;
+                                    // treat the three characters as literals
+                                    // instead of rejecting the whole syntax file.
+                                    set.insert(low);
+                                    set.insert(b'-');
+                                    set.insert(high);
+                                    continue;
                                 }
                                 if low <= b'\n' && b'\n' <= high {
                                     saw_newline = true;
@@ -1147,10 +1394,21 @@ impl<'a> Parser<'a> {
             return Ok(Some(ClassItem::Byte(fallback)));
         }
         if value > 255 {
-            return Err(self.err(
-                "character outside byte range in character class",
-                start.saturating_sub(2),
-            ));
+            // Byte-oriented engine: approximate a multi-byte character by
+            // accepting any of its UTF-8 bytes inside the collection.
+            let Some(character) = char::from_u32(value) else {
+                return Err(self.err(
+                    "character outside Unicode range in character class",
+                    start.saturating_sub(2),
+                ));
+            };
+            let mut buffer = [0u8; 4];
+            let encoded = character.encode_utf8(&mut buffer);
+            let mut set = ByteSet::empty();
+            for byte in encoded.as_bytes() {
+                set.insert(*byte);
+            }
+            return Ok(Some(ClassItem::Set(set)));
         }
         Ok(Some(ClassItem::Byte(value as u8)))
     }

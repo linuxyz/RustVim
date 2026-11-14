@@ -54,7 +54,7 @@ used by the golden-frame tests. VIMRUNTIME may point at an unpacked Vim
 | INS-01 insert/append/open | done | insert, append, open line, replace-char |
 | EX-01 Ex parser | done | ranges, addresses, marks, search addresses, modifiers |
 | ENC-01 UTF-8 internal model | done | byte strings, Unicode width table |
-| TST-01 test harness | done | 507 workspace tests at last run |
+| TST-01 test harness | done | 508 workspace tests at last run |
 
 P0 is complete.  Options gated behind unimplemented features (GUI, terminal,
 spell, folding, diff, sessions, Python/Ruby/etc.) are absent from `:set`,
@@ -115,8 +115,14 @@ Implemented and exercised by tests:
 - **Autocommands:** event registry, groups, patterns, buffer-local patterns,
   User events with names, ++once, filetype/syntax/OptionSet/insert/write events.
 - **VimL:** value/GC model, parser/evaluator, functions/closures/lambdas,
-  scopes, control flow, exceptions, dictionaries/lists/blobs, many builtins,
-  :source execution, autoload sourcing.
+  scopes, control flow, exceptions, dictionaries/lists/blobs, heredoc
+  assignments (`let x =<< trim END`), many builtins, `:source` execution,
+  on-demand autoload script loading for `foo#Bar()` functions and
+  `g:foo#var` globals, `:runtime`/`:runtime!` inside sourced scripts,
+  user commands with raw `-nargs=*` arguments executed in their defining
+  script's `s:` context (including `<q-args>` quoting), dotted function
+  names, `is#`/`isnot#`, the bare `version` constant, `v:lang`, and
+  `<sfile>` expansion with `:p`/`:h`/`:t`/`:r`/`:e` modifiers.
 - **Syntax/highlight:** highlight groups and links, :highlight, colorscheme
   sourcing, syntax keyword/match/region engine, runtime syntax loading.
 - **Runtime/help:** runtimepath discovery, :runtime/:runtime!, filetype detection, :setf/:setfiletype, :packadd/:packloadall,
@@ -149,15 +155,20 @@ Implemented and exercised by tests:
 - **Statusline:** multi-row per-window and global statuslines via 'statuslineopt=maxheight:N' and %@ newlines, with fixedheight support.
 - **Display lines:** gj/gk/g0/g$/gm move by wrapped display lines using the same showbreak/breakindent geometry as rendering.
 - **Testing/tooling:** 80x24, 120x40, cursor, wide-character, popup and per-cell attribute/palette golden snapshots; deterministic randomized regex/syntax fuzz smoke test; libFuzzer/cargo-fuzz targets under fuzz/ (regex, syntax, VimL) that compile with `cargo check --manifest-path fuzz/Cargo.toml`, plus a scheduled weekly fuzz workflow; std-only benchmark targets under crates/rvim-headless/benches covering startup, frame render, large-file open, regex scans and syntax highlighting.
-- **VimL/regex:** =~, matchstr(), match(), substitute() and :catch now use the full Vim regex engine (lookaround, \zs/\ze, backrefs, classes).
-- **Syntax:** multi-line regions terminate correctly on later lines; matchgroup delimiter highlighting, oneline regions, nextgroup chaining, contains=/containedin= filtering across multi-line and same-line regions, contained-only items, and option-token filtering are supported.
+- **VimL/regex:** =~, matchstr(), match(), substitute() and :catch use the full Vim regex engine (lookaround including \@N limits, \zs/\ze, backrefs, classes). Vim's syntax atoms are supported: \z( groups with cross-pattern \z1 references in :syntax region end/skip patterns, \%[ optional sequences, \& conjunction, \%( groups (including a redundant backslash as in \%\(), \%d/\%o/\%x/\%u/\%U character escapes, \%#=N engine selectors, \Z, and contextual \% atoms (compiled as never-matching because the crate has no editor context). Multi-byte class members are approximated by their UTF-8 bytes and reverse class ranges are treated as literals, matching Vim's permissive runtime behaviour.
+- **Syntax:** multi-line regions terminate correctly on later lines; matchgroup delimiter highlighting, oneline regions, nextgroup chaining, contains=/containedin= filtering across multi-line and same-line regions, contained-only items, and option-token filtering are supported. Region `start=`/`end=`/`skip=` options are tokenised like Vim's skip_regexp(), so delimiters and spaces inside `[...]` collections or patterns do not break parsing; `\z(...)` captures are substituted into dynamic end patterns.
 
 Still missing or partial in P1:
 
 - Completion contexts cover buffers/functions/variables/syntax/compiler/colorscheme; some Vim cmdwin-specific conveniences (type column, cmdwin insert-mode start) are not reproduced.
 - :ptselect lists candidates and previews the first match; the interactive select-then-preview step and :psearch are not implemented.
 - Full shell quoting matrix and remaining errorformat corner cases (%D/%X directory stacks are supported).
-- Full autoload and legacy VimL edge cases; see the VimL crate docs.
+- Vim 9.2 interpolated strings (`$'...'` / `$"..."`) are not implemented; four runtime syntax files (help, icalendar, modula3, pkl) still use them.
+- Dynamic `:let {expr}name` variable names are not implemented; liquid, livebook and markdown syntax files build buffer-local names this way.
+- Vim9-script runtime files are out of scope and reported as `E319` (compiler/context.vim and several newer syntax files such as 2html, context, csv, hare, hlsl, java and tsv).
+- `syntax/glimmer.vim` only loads after a JavaScript/TypeScript syntax file has set `b:current_syntax`; sourcing it standalone fails in Vim too, so the Tier C check is environment dependent.
+- The basic autoload loader covers script-level autoload files; deeper autoload and full legacy VimL semantics are still incomplete.
+- Fold and conceal options (`foldmethod`, `foldignore`, `conceallevel`, ...) are accepted and stored so runtime files load, but folding and concealment themselves remain P2 (`has('folding')`/`has('conceal')` are 0).
 - Package after/ ordering and full startup-file ordering; :packadd/:packloadall and tags completion are present.
 - Closure-capturing Lambda Shada values (simple lambdas, named/partial Funcref, Number/String/Bool/List/Dict/Blob/Special and buffer lists are persisted). multi-level persistent undo, viminfo startup/shutdown and basic :mksession/:mkview/:loadview are present.
 - Remaining niche C++/Java cinoptions items; wrapped-line mouse mapping, wheel/chunk-level and partial-column smoothscroll are supported. keyword, completefunc and omnifunc completion plus indentexpr/cindent/cinkeys/lisp/showbreak/breakindent/display-line motions/chunk smoothscroll with cursor mapping are supported.
@@ -176,7 +187,7 @@ cargo test --workspace
 cargo clippy --workspace --all-targets -- -D warnings
 ~~~
 
-At the time of writing the workspace has 507 tests and no clippy warnings.
+At the time of writing the workspace has 508 tests and no clippy warnings.
 The optional PTY smoke script is tools/pty_smoke.py; some sandboxes deny
 openpty, so it is not part of the required CI gate yet.
 
@@ -186,5 +197,7 @@ openpty, so it is not part of the required CI gate yet.
 - Generated option defaults are parsed from the pinned source where possible;
   a handful of feature-dependent defaults are approximated.
 - The editor's internal text is UTF-8, but regex and buffer APIs remain
-  byte-oriented.
+  byte-oriented.  Multi-byte characters inside regex collections are therefore
+  approximated by their UTF-8 bytes, and context-dependent regex atoms
+  (`\%#`, `\%V`, line/column atoms) compile but never match.
 - No runtime tree is vendored; tests use temporary runtime trees.

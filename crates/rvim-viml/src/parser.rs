@@ -351,7 +351,23 @@ impl Parser {
     fn parse_postfix(&mut self) -> Result<Expr> {
         let mut expression = self.parse_primary()?;
         loop {
-            if self.eat_punct(Punct::LParen) {
+            // A literal followed by '(' is not a call; for ":execute" the
+            // parenthesised expression is a separate list item (runtime
+            // syntax files rely on this).  Subscripts and members still apply
+            // to literals.
+            let literal_callee = matches!(
+                expression,
+                Expr::Number(_)
+                    | Expr::Float(_)
+                    | Expr::String(_)
+                    | Expr::Blob(_)
+                    | Expr::List(_)
+                    | Expr::Dict(_)
+                    | Expr::Binary { .. }
+                    | Expr::Unary { .. }
+                    | Expr::Ternary { .. }
+            );
+            if !literal_callee && self.eat_punct(Punct::LParen) {
                 let args = self.parse_arguments()?;
                 expression = Expr::Call {
                     callee: Box::new(expression),

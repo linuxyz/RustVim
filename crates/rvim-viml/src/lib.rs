@@ -22,7 +22,7 @@ pub use gc::{collect_cycles, live_object_count};
 pub use host::{BasicHost, ExContext, OptionScope, VarScope, VimHost};
 pub use runtime::VimRuntime;
 pub use rvim_types::VimString;
-pub use script::{execute_script, parse_script};
+pub use script::{execute_script, execute_script_in_context, parse_script};
 pub use value::{
     SpecialValue, Value, VimDict, VimList, VIM_T_BLOB, VIM_T_BOOL, VIM_T_DICT, VIM_T_FLOAT,
     VIM_T_FUNC, VIM_T_LIST, VIM_T_NONE, VIM_T_NUMBER, VIM_T_STRING,

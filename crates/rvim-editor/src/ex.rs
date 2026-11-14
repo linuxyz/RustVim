@@ -1224,7 +1224,8 @@ fn execute_command_inner(editor: &mut Editor, command: ExCommand) -> Result<(), 
             if arg.is_empty() {
                 return Err(VimError::new(471, "Argument required"));
             }
-            let path = expand_path_arg(arg);
+            let arg = expand_sfile(editor, arg);
+            let path = expand_path_arg(&arg);
             let text = rvim_platform::fs::read_file(&path)
                 .map_err(|error| VimError::new(13, error.to_string()))?;
             editor.fire_event(crate::autocmd::Event::SourcePre);
@@ -1348,7 +1349,7 @@ fn execute_command_inner(editor: &mut Editor, command: ExCommand) -> Result<(), 
                 editor.autocmds.begin_group(arg);
             }
         }
-        "doautocmd" | "doau" => {
+        "doautocmd" | "doau" | "do" | "doautoall" | "doauto" => {
             let mut parts = command.args.split_whitespace();
             let first = parts.next().unwrap_or("");
             let event_name = if crate::autocmd::Event::parse(first).is_some() {
@@ -1499,6 +1500,13 @@ fn execute_command_inner(editor: &mut Editor, command: ExCommand) -> Result<(), 
                 Some(resolve_file_arg(editor, arg)?)
             };
             editor.split_window(rvim_view::SplitDir::Vertical, path.as_deref())?;
+        }
+        "foldopen" | "foldo" | "foldclose" | "foldc" | "folddoopen" | "folddoclosed" => {
+            // Folding is P2; accept the commands so syntax files load.
+        }
+        "enew" => {
+            check_modified(editor, command.bang)?;
+            editor.new_empty_buffer()?;
         }
         "new" => {
             let direction = if editor.vertical_requested {
@@ -1982,6 +1990,13 @@ fn execute_command_inner(editor: &mut Editor, command: ExCommand) -> Result<(), 
             handle_substitute(editor, &repeat)?;
         }
         _ => {
+            if let Some(full) = crate::registry::resolve_command_name(&command.name) {
+                if full != command.name {
+                    let mut renamed = command;
+                    renamed.name = full.to_string();
+                    return execute_command_inner(editor, renamed);
+                }
+            }
             return Err(VimError::plain(format!(
                 "E492: Not an editor command: {}",
                 command.name
@@ -1989,6 +2004,86 @@ fn execute_command_inner(editor: &mut Editor, command: ExCommand) -> Result<(), 
         }
     }
     Ok(())
+}
+
+/// Expand `<sfile>` and its `:p`, `:h`, `:t`, `:r`, `:e` modifiers.
+///
+/// Runtime syntax files use forms such as
+/// `source <sfile>:p:h/java.vim` to load a file next to themselves.
+fn expand_sfile(editor: &Editor, arg: &str) -> String {
+    const MARKER: &str = "<sfile>";
+    let Some(script) = editor.script_file.as_deref() else {
+        return arg.to_string();
+    };
+    let mut out = String::new();
+    let mut rest = arg;
+    while let Some(position) = rest.find(MARKER) {
+        out.push_str(&rest[..position]);
+        let mut value = script.to_string();
+        let mut tail = &rest[position + MARKER.len()..];
+        while let Some(after) = tail.strip_prefix(':') {
+            let Some(modifier) = after.chars().next() else {
+                break;
+            };
+            let replacement = match modifier {
+                'p' => Some(absolute_path(&value)),
+                'h' => Some(head_path(&value)),
+                't' => Some(tail_path(&value)),
+                'r' => Some(root_path(&value)),
+                'e' => Some(extension_path(&value)),
+                _ => None,
+            };
+            let Some(replacement) = replacement else {
+                break;
+            };
+            value = replacement;
+            tail = &after[modifier.len_utf8()..];
+        }
+        out.push_str(&value);
+        rest = tail;
+    }
+    out.push_str(rest);
+    out
+}
+
+fn absolute_path(value: &str) -> String {
+    let path = std::path::Path::new(value);
+    if path.is_absolute() {
+        return value.to_string();
+    }
+    std::env::current_dir()
+        .map(|directory| directory.join(path))
+        .map(|path| path.display().to_string())
+        .unwrap_or_else(|_| value.to_string())
+}
+
+fn head_path(value: &str) -> String {
+    std::path::Path::new(value)
+        .parent()
+        .map(|parent| parent.display().to_string())
+        .filter(|parent| !parent.is_empty())
+        .unwrap_or_else(|| ".".to_string())
+}
+
+fn tail_path(value: &str) -> String {
+    std::path::Path::new(value)
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_else(|| value.to_string())
+}
+
+fn root_path(value: &str) -> String {
+    std::path::Path::new(value)
+        .file_stem()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_else(|| value.to_string())
+}
+
+fn extension_path(value: &str) -> String {
+    std::path::Path::new(value)
+        .extension()
+        .map(|extension| extension.to_string_lossy().into_owned())
+        .unwrap_or_default()
 }
 
 fn parse_address_target(editor: &Editor, text: &str) -> Result<u32, VimError> {
@@ -2740,6 +2835,14 @@ fn parse_color(value: &str) -> Option<rvim_ui_api::Color> {
     Some(rvim_ui_api::Color::Indexed(index))
 }
 
+/// True when the token is an event name or a comma separated event list.
+fn is_event_list(token: &str) -> bool {
+    !token.is_empty()
+        && token
+            .split(',')
+            .all(|name| !name.is_empty() && crate::autocmd::Event::parse(name).is_some())
+}
+
 fn handle_autocmd(editor: &mut Editor, command: &ExCommand) -> Result<(), VimError> {
     let args = command.args.trim();
     if command.bang && args.is_empty() {
@@ -2804,7 +2907,7 @@ fn handle_autocmd(editor: &mut Editor, command: &ExCommand) -> Result<(), VimErr
     }
     let tokens: Vec<&str> = args.split_whitespace().collect();
     let first = *tokens.first().unwrap_or(&"");
-    let (group, event_index) = if crate::autocmd::Event::parse(first).is_some() {
+    let (group, event_index) = if is_event_list(first) {
         (None, 0)
     } else {
         (Some(first), 1)
@@ -2859,6 +2962,38 @@ fn handle_autocmd(editor: &mut Editor, command: &ExCommand) -> Result<(), VimErr
     Ok(())
 }
 
+/// Expand a user command invocation without running it.
+///
+/// Used by the script engine so a replacement that refers to `s:` variables
+/// of the defining script runs inside the sourcing runtime.
+pub(crate) fn expand_user_command_line(
+    editor: &mut Editor,
+    line: &str,
+) -> Result<Option<(String, Option<rvim_types::ScriptId>)>, VimError> {
+    let command = match rvim_ex::parse(line) {
+        Ok(command) => command,
+        Err(_) => return Ok(None),
+    };
+    let Some(user) = editor.user_commands.get(&command.name).cloned() else {
+        return Ok(None);
+    };
+    let range = if command.range.addresses.is_empty() {
+        ResolvedRange::new(editor.cursor().lnum, editor.cursor().lnum)
+    } else {
+        resolve_range(editor, &command.range)?
+    };
+    let expanded = user
+        .expand(
+            &command.args,
+            command.bang,
+            range.start,
+            range.end,
+            user.range,
+        )
+        .map_err(VimError::plain)?;
+    Ok(Some((expanded, user.script_id)))
+}
+
 fn execute_user_command(
     editor: &mut Editor,
     command: &ExCommand,
@@ -2878,7 +3013,11 @@ fn execute_user_command(
             user.range,
         )
         .map_err(VimError::plain)?;
-    execute(editor, &expanded)
+    let previous_override = editor.viml_script_override;
+    editor.viml_script_override = user.script_id;
+    let result = execute(editor, &expanded);
+    editor.viml_script_override = previous_override;
+    result
 }
 
 fn define_user_command(editor: &mut Editor, command: &ExCommand) -> Result<(), VimError> {
@@ -2953,6 +3092,7 @@ fn define_user_command(editor: &mut Editor, command: &ExCommand) -> Result<(), V
         name.to_string(),
         crate::usercmd::UserCommand {
             name: name.to_string(),
+            script_id: editor.viml_script_context,
             bang,
             nargs,
             range,

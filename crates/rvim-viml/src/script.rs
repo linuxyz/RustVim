@@ -204,42 +204,45 @@ impl Cmd {
     }
 }
 
+// Ordered like Vim's ex_cmds.h command table.  Ambiguous abbreviations are
+// resolved to the first matching entry, so ":end" means ":endif" (endif comes
+// before endwhile), which runtime syntax files rely on.
 const COMMANDS: &[(&[u8], usize, Cmd)] = &[
-    (b"let", 3, Cmd::Let),
-    (b"const", 4, Cmd::Const),
-    (b"unlet", 3, Cmd::Unlet),
-    (b"lockvar", 5, Cmd::Lockvar),
-    (b"unlockvar", 4, Cmd::Unlockvar),
-    (b"if", 2, Cmd::If),
-    (b"elseif", 5, Cmd::Elseif),
-    (b"else", 2, Cmd::Else),
-    (b"endif", 4, Cmd::Endif),
-    (b"while", 2, Cmd::While),
-    (b"endwhile", 3, Cmd::Endwhile),
-    (b"for", 3, Cmd::For),
-    (b"endfor", 5, Cmd::Endfor),
-    (b"function", 2, Cmd::Function),
-    (b"endfunction", 4, Cmd::Endfunction),
-    (b"return", 3, Cmd::Return),
-    (b"call", 3, Cmd::Call),
-    (b"echo", 2, Cmd::Echo),
-    (b"echon", 5, Cmd::Echon),
-    (b"echomsg", 5, Cmd::Echomsg),
-    (b"echoerr", 5, Cmd::Echoerr),
-    (b"execute", 3, Cmd::Execute),
-    (b"try", 3, Cmd::Try),
-    (b"catch", 3, Cmd::Catch),
-    (b"finally", 4, Cmd::Finally),
-    (b"endtry", 4, Cmd::Endtry),
-    (b"throw", 2, Cmd::Throw),
     (b"break", 4, Cmd::Break),
+    (b"call", 3, Cmd::Call),
+    (b"catch", 3, Cmd::Catch),
     (b"continue", 3, Cmd::Continue),
-    (b"source", 2, Cmd::Source),
+    (b"const", 4, Cmd::Const),
+    (b"delfunction", 4, Cmd::Delfunction),
+    (b"echo", 2, Cmd::Echo),
+    (b"echoerr", 5, Cmd::Echoerr),
+    (b"echomsg", 5, Cmd::Echomsg),
+    (b"echon", 5, Cmd::Echon),
+    (b"else", 2, Cmd::Else),
+    (b"elseif", 5, Cmd::Elseif),
+    (b"endif", 4, Cmd::Endif),
+    (b"endfunction", 4, Cmd::Endfunction),
+    (b"endfor", 5, Cmd::Endfor),
+    (b"endtry", 4, Cmd::Endtry),
+    (b"endwhile", 3, Cmd::Endwhile),
+    (b"eval", 3, Cmd::Eval),
+    (b"execute", 3, Cmd::Execute),
+    (b"finally", 4, Cmd::Finally),
     (b"finish", 4, Cmd::Finish),
+    (b"for", 3, Cmd::For),
+    (b"function", 2, Cmd::Function),
+    (b"if", 2, Cmd::If),
+    (b"let", 3, Cmd::Let),
+    (b"lockvar", 5, Cmd::Lockvar),
+    (b"return", 3, Cmd::Return),
     (b"scriptencoding", 7, Cmd::ScriptEncoding),
     (b"scriptversion", 7, Cmd::ScriptVersion),
-    (b"delfunction", 4, Cmd::Delfunction),
-    (b"eval", 3, Cmd::Eval),
+    (b"source", 2, Cmd::Source),
+    (b"throw", 2, Cmd::Throw),
+    (b"try", 3, Cmd::Try),
+    (b"unlet", 3, Cmd::Unlet),
+    (b"unlockvar", 4, Cmd::Unlockvar),
+    (b"while", 2, Cmd::While),
 ];
 
 fn resolve_command(word: &[u8]) -> Option<Cmd> {
@@ -248,17 +251,18 @@ fn resolve_command(word: &[u8]) -> Option<Cmd> {
             return Some(*command);
         }
     }
-    let mut best: Option<(usize, Cmd)> = None;
-    for (full, minimum, command) in COMMANDS {
-        if word.len() >= *minimum
-            && word.len() < full.len()
-            && full.starts_with(word)
-            && best.is_none_or(|(best_minimum, _)| *minimum > best_minimum)
-        {
-            best = Some((*minimum, *command));
+    // Vim does not use the documented minimum abbreviations in the lookup;
+    // any prefix resolves to the first table entry.  Single letters are Ex
+    // commands of their own (":e" is :edit), so leave them alone.
+    if word.len() < 2 {
+        return None;
+    }
+    for (full, _, command) in COMMANDS {
+        if full.starts_with(word) {
+            return Some(*command);
         }
     }
-    best.map(|(_, command)| command)
+    None
 }
 
 fn is_modifier(word: &[u8]) -> bool {
@@ -448,7 +452,31 @@ fn preprocess_source(source: &[u8]) -> Vec<SourceLine> {
     }
 
     let mut joined: Vec<SourceLine> = Vec::new();
-    for line in raw {
+    let mut raw = raw.into_iter().peekable();
+    while let Some(line) = raw.next() {
+        if let Some(start) = heredoc_start(&line.text) {
+            let mut content: Vec<Vec<u8>> = Vec::new();
+            let mut terminator = false;
+            for next in raw.by_ref() {
+                if trim_start(&next.text) == start.marker {
+                    terminator = true;
+                    break;
+                }
+                content.push(next.text);
+            }
+            if terminator {
+                joined.push(SourceLine {
+                    line: line.line,
+                    text: heredoc_assignment(&line.text[..start.prefix_len], &content, start.trim),
+                });
+                continue;
+            }
+            // No terminator: fall back to treating the line normally.
+            joined.push(line);
+            let rest: Vec<SourceLine> = raw.collect();
+            joined.extend(rest);
+            break;
+        }
         let trimmed = trim_start(&line.text);
         if trimmed.first() == Some(&b'\\') && !joined.is_empty() {
             let continuation = trimmed[1..].to_vec();
@@ -462,7 +490,14 @@ fn preprocess_source(source: &[u8]) -> Vec<SourceLine> {
 
     let mut output = Vec::new();
     for line in joined {
-        let stripped = strip_unterminated_comment(&line.text).to_vec();
+        // Commands that take raw text (":syntax" patterns, ":normal", ...)
+        // treat '"' as part of their argument; only other commands can start a
+        // comment with an unmatched double quote.
+        let stripped = if raw_text_command(command_word(&line.text)) {
+            line.text.clone()
+        } else {
+            strip_unterminated_comment(&line.text).to_vec()
+        };
         let trimmed = trim_start(&stripped);
         if trimmed.is_empty() || trimmed[0] == b'"' {
             output.push(SourceLine {
@@ -534,15 +569,168 @@ fn strip_unterminated_comment(text: &[u8]) -> &[u8] {
     text
 }
 
+/// A parsed `let var =<< [trim] [eval] MARKER` heredoc opening.
+struct HeredocStart {
+    /// Byte offset of the `=<<` token; everything before it is kept.
+    prefix_len: usize,
+    /// End marker line (compared after leading whitespace is removed).
+    marker: Vec<u8>,
+    /// Remove leading whitespace and blank lines at both ends.
+    trim: bool,
+}
+
+fn heredoc_start(text: &[u8]) -> Option<HeredocStart> {
+    let trimmed = trim_start(text);
+    let assignment = trimmed.starts_with(b"let ")
+        || trimmed.starts_with(b"let	")
+        || trimmed.starts_with(b"var ")
+        || trimmed.starts_with(b"const ");
+    if !assignment {
+        return None;
+    }
+    let position = find_bytes(text, b"=<<")?;
+    let mut index = position + 3;
+    let mut trim = false;
+    let mut marker: Option<Vec<u8>> = None;
+    loop {
+        while index < text.len() && (text[index] == b' ' || text[index] == b'\t') {
+            index += 1;
+        }
+        if index >= text.len() || text[index] == b'"' {
+            break;
+        }
+        let begin = index;
+        while index < text.len() && (text[index].is_ascii_alphanumeric() || text[index] == b'_') {
+            index += 1;
+        }
+        if begin == index {
+            return None;
+        }
+        let word = &text[begin..index];
+        if word == b"trim" {
+            trim = true;
+        } else if word == b"eval" {
+            // An eval: heredoc needs expression evaluation, which is not
+            // available while preprocessing; keep such lines untouched.
+            return None;
+        } else if marker.is_none() {
+            marker = Some(word.to_vec());
+        } else {
+            return None;
+        }
+    }
+    let marker = marker?;
+    Some(HeredocStart {
+        prefix_len: position,
+        marker,
+        trim,
+    })
+}
+
+fn find_bytes(haystack: &[u8], needle: &[u8]) -> Option<usize> {
+    haystack
+        .windows(needle.len())
+        .position(|window| window == needle)
+}
+
+fn heredoc_assignment(prefix: &[u8], lines: &[Vec<u8>], trim: bool) -> Vec<u8> {
+    let mut content: Vec<&[u8]> = if trim {
+        lines.iter().map(|line| trim_start(line)).collect()
+    } else {
+        lines.iter().map(|line| line.as_slice()).collect()
+    };
+    if trim {
+        while content.first().is_some_and(|line| line.is_empty()) {
+            content.remove(0);
+        }
+        while content.last().is_some_and(|line| line.is_empty()) {
+            content.pop();
+        }
+    }
+    let mut out = prefix.to_vec();
+    out.extend_from_slice(b"= [");
+    for (index, line) in content.iter().enumerate() {
+        if index > 0 {
+            out.push(b',');
+        }
+        out.push(b'\'');
+        for &byte in *line {
+            if byte == b'\'' {
+                out.extend_from_slice(b"''");
+            } else {
+                out.push(byte);
+            }
+        }
+        out.push(b'\'');
+    }
+    out.push(b']');
+    out
+}
+
+/// The first word of an Ex command line, ignoring leading whitespace and ':'.
+fn command_word(line: &[u8]) -> &[u8] {
+    let mut rest = trim_start(line);
+    while rest.first() == Some(&b':') {
+        rest = &rest[1..];
+    }
+    let (word, _) = read_word(trim_start(rest));
+    word
+}
+
+/// Commands that consume their argument as raw text.  A '|' inside the
+/// argument does not start a new command and a '"' does not start a comment.
+/// Recognise a `:runtime` / `:runtime!` command line.
+fn parse_runtime_invocation(command: &str) -> Option<(bool, String)> {
+    let text = trim_start(command.as_bytes());
+    let text = match text.strip_prefix(b":") {
+        Some(rest) => trim_start(rest),
+        None => text,
+    };
+    let (word, rest) = read_word(text);
+    if word != b"runtime" {
+        return None;
+    }
+    let rest = trim_start(rest);
+    let (all, rest) = match rest.first() {
+        Some(b'!') => (true, trim_start(&rest[1..])),
+        _ => (false, rest),
+    };
+    let pattern = String::from_utf8_lossy(rest).trim().to_string();
+    let pattern = pattern.trim_end_matches('!').to_string();
+    if pattern.is_empty() {
+        return None;
+    }
+    Some((all, pattern))
+}
+
+fn raw_text_command(word: &[u8]) -> bool {
+    matches!(
+        word,
+        b"normal"
+            | b"norm"
+            | b"global"
+            | b"g"
+            | b"vglobal"
+            | b"v"
+            | b"autocmd"
+            | b"au"
+            | b"command"
+            | b"com"
+    ) || (word.len() >= 2 && b"syntax".starts_with(word))
+        // User defined commands start with an uppercase letter.  Without a
+        // "-bar" attribute their argument may contain '|' (runtime syntax
+        // files rely on this for ':VimFolda').
+        || word.first().is_some_and(|byte| byte.is_ascii_uppercase())
+}
+
 fn split_commands(line: &[u8]) -> Vec<Vec<u8>> {
     let trimmed = trim_start(line);
     let (word, _) = read_word(trimmed);
-    if word == b"normal"
-        || word == b"global"
-        || word == b"vglobal"
-        || word == b"autocmd"
-        || word == b"command"
-    {
+    // Commands whose argument is raw text: a '|' in the argument belongs to
+    // the command, not to the next command.  Vim marks those with the lack of
+    // the EX_TRLBAR flag.  ":syntax" patterns in particular contain bare
+    // '|' alternations and '\|' escapes.
+    if raw_text_command(word) {
         return vec![line.to_vec()];
     }
     let mut pieces = Vec::new();
@@ -581,6 +769,12 @@ fn split_commands(line: &[u8]) -> Vec<Vec<u8>> {
             b'|' => {
                 let previous = index.checked_sub(1).and_then(|position| line.get(position));
                 let next = line.get(index + 1);
+                // A backslash-escaped bar is part of the argument (e.g. a
+                // regex "\|"); Vim does not treat it as a command separator.
+                if previous == Some(&b'\\') {
+                    index += 1;
+                    continue;
+                }
                 if previous != Some(&b'|') && next != Some(&b'|') {
                     pieces.push(line[start..index].to_vec());
                     start = index + 1;
@@ -648,10 +842,17 @@ impl BlockParser {
                 let trimmed = trim_start(&head.text);
                 let (word, _) = read_word(trimmed);
                 if trimmed.starts_with(b"vim9script") || is_vim9_command(word) {
-                    return Err(VimError::plain(format!(
-                        "Vim9 script command :{} is not supported; RVim's legacy VimL engine rejects Vim9 syntax",
-                        String::from_utf8_lossy(word)
-                    )));
+                    // Vim9 script is deliberately out of scope (like the
+                    // terminal emulator); report a coded error so tooling and
+                    // the compatibility matrix do not silently treat the file
+                    // as loaded.
+                    return Err(VimError::new(
+                        319,
+                        format!(
+                            "Sorry, the command is not available in this version: {} (Vim9 script is not supported)",
+                            String::from_utf8_lossy(word)
+                        ),
+                    ));
                 }
                 self.index += 1;
                 statements.push(Stmt {
@@ -1055,26 +1256,36 @@ fn parse_destructure(parser: &mut Parser) -> Result<AssignTarget> {
 }
 
 fn parse_function_name(parser: &mut Parser) -> Result<VimString> {
-    match parser.bump().kind {
+    let mut name = match parser.bump().kind {
         TokenKind::Ident(name) => {
             if name.as_bytes().eq_ignore_ascii_case(b"<SID>") {
                 match parser.bump().kind {
                     TokenKind::Ident(rest) => {
                         let mut full = VimString::from("<SID>");
                         full.extend_from_slice(rest.as_bytes());
-                        Ok(full)
+                        full
                     }
-                    _ => Err(codes::e15("missing function name after <SID>")),
+                    _ => return Err(codes::e15("missing function name after <SID>")),
                 }
             } else {
-                Ok(name)
+                name
             }
         }
         TokenKind::ScopedVar(Scope::Script, name) => {
-            Ok(VimString::from(format!("s:{}", name.to_string_lossy())))
+            VimString::from(format!("s:{}", name.to_string_lossy()))
         }
-        _ => Err(codes::e15("invalid function name")),
+        _ => return Err(codes::e15("invalid function name")),
+    };
+    // Vim allows dotted names such as "s:ff.LeftConstant(...)" (used by
+    // runtime/syntax/java.vim).
+    while parser.eat_punct(Punct::Dot) {
+        let TokenKind::Ident(part) = parser.bump().kind else {
+            return Err(codes::e15("invalid function name"));
+        };
+        name.extend_from_slice(b".");
+        name.extend_from_slice(part.as_bytes());
     }
+    Ok(name)
 }
 
 fn parse_function_header(rest: &[u8], line: u32, bang: bool) -> Result<FunctionDef> {
@@ -1308,6 +1519,35 @@ pub fn execute_script(
     drop(ctx);
     runtime.leave_source();
     runtime.pop_script(id);
+    result
+}
+
+/// Execute `source` as if it was the body of the script with `script_id`.
+///
+/// This is used for user command replacements, which run in the script
+/// context where the command was defined so `s:` variables and functions
+/// resolve there.
+pub fn execute_script_in_context(
+    source: &[u8],
+    script_id: ScriptId,
+    runtime: &mut VimRuntime,
+    host: &mut dyn VimHost,
+) -> Result<()> {
+    runtime.enter_source();
+    runtime.push_context_script(script_id);
+    let mut ctx = Ctx::new(runtime, host);
+    let result = run_script_source(&mut ctx, source);
+    let result = match result {
+        Ok(()) => Ok(()),
+        Err(error) => {
+            let error = ctx.decorate(error).into_uncaught_throw();
+            ctx.emit_error(&error);
+            Err(error)
+        }
+    };
+    drop(ctx);
+    runtime.pop_context_script();
+    runtime.leave_source();
     result
 }
 
@@ -1574,6 +1814,29 @@ fn exec_statement(ctx: &mut Ctx, statement: &Stmt) -> Result<Flow> {
             Ok(Flow::Normal)
         }
         StmtKind::Ex(command) => {
+            // ":runtime" must load into this runtime; routing it through the
+            // editor would start a nested script context and lose globals.
+            if let Some((all, pattern)) = parse_runtime_invocation(command) {
+                for (name, bytes) in ctx.host.runtime_files(&pattern, all)? {
+                    run_sourced_script(ctx, &name, &bytes)?;
+                }
+                return Ok(Flow::Normal);
+            }
+            if let Some((expanded, script_id)) = ctx.host.user_command_expansion(command)? {
+                // Run the replacement inside this runtime so nested :execute,
+                // :call and :source statements keep working, and switch to the
+                // defining script's s: context while it runs.
+                let saved = (ctx.script_id, ctx.script_name.clone());
+                if let Some(script_id) = script_id.filter(|id| !id.is_nil()) {
+                    ctx.script_id = script_id;
+                    ctx.script_name = ctx.runtime.script_name(script_id).unwrap_or_default();
+                }
+                let result = execute_commands_text(ctx, &expanded);
+                ctx.script_id = saved.0;
+                ctx.script_name = saved.1;
+                result?;
+                return Ok(Flow::Normal);
+            }
             let context = ctx.ex_context();
             ctx.host.execute_ex(command, &context)?;
             Ok(Flow::Normal)
@@ -1888,13 +2151,78 @@ pub(crate) fn call_lambda(
     outcome
 }
 
+/// Expand `<sfile>` in a `:source` argument using the currently sourced
+/// script name and the `:p`, `:h`, `:t`, `:r`, `:e` modifiers.
+fn expand_sfile(path: &str, script: &str) -> String {
+    const MARKER: &str = "<sfile>";
+    if script.is_empty() || !path.contains(MARKER) {
+        return path.to_string();
+    }
+    let mut out = String::new();
+    let mut rest = path;
+    while let Some(position) = rest.find(MARKER) {
+        out.push_str(&rest[..position]);
+        let mut value = script.to_string();
+        let mut tail = &rest[position + MARKER.len()..];
+        while let Some(after) = tail.strip_prefix(':') {
+            let Some(modifier) = after.chars().next() else {
+                break;
+            };
+            let replacement = match modifier {
+                'p' => Some(std::path::Path::new(&value).canonicalize().map_or_else(
+                    |_| {
+                        std::env::current_dir().map_or_else(
+                            |_| value.clone(),
+                            |directory| directory.join(&value).display().to_string(),
+                        )
+                    },
+                    |path| path.display().to_string(),
+                )),
+                'h' => std::path::Path::new(&value)
+                    .parent()
+                    .map(|parent| parent.display().to_string())
+                    .filter(|parent| !parent.is_empty())
+                    .or_else(|| Some(".".to_string())),
+                't' => std::path::Path::new(&value)
+                    .file_name()
+                    .map(|name| name.to_string_lossy().into_owned()),
+                'r' => std::path::Path::new(&value)
+                    .file_stem()
+                    .map(|name| name.to_string_lossy().into_owned()),
+                'e' => std::path::Path::new(&value)
+                    .extension()
+                    .map(|extension| extension.to_string_lossy().into_owned()),
+                _ => None,
+            };
+            let Some(replacement) = replacement else {
+                break;
+            };
+            value = replacement;
+            tail = &after[modifier.len_utf8()..];
+        }
+        out.push_str(&value);
+        rest = tail;
+    }
+    out.push_str(rest);
+    out
+}
+
 fn execute_source(ctx: &mut Ctx, path: &VimString) -> Result<()> {
-    let name = path.to_string_lossy().into_owned();
+    let raw = path.to_string_lossy().into_owned();
+    let name = expand_sfile(&raw, &ctx.script_name);
+    let source = ctx.host.read_file(&name)?;
+    run_sourced_script(ctx, &name, &source)
+}
+
+/// Run script bytes in the current runtime, as if a `:source` loaded them.
+///
+/// Used for `:source`, `:runtime` and autoload scripts so globals and
+/// functions defined by the script stay in the runtime that is executing.
+pub(crate) fn run_sourced_script(ctx: &mut Ctx, name: &str, source: &[u8]) -> Result<()> {
     if ctx.runtime.source_depth() >= 100 {
         return Err(VimError::new(22, "Script sourcing is nested too deeply"));
     }
-    let source = ctx.host.read_file(&name)?;
-    let id = ctx.runtime.push_script(&name);
+    let id = ctx.runtime.push_script(name);
     ctx.runtime.enter_source();
     let saved = (
         ctx.script_id,
@@ -1903,11 +2231,11 @@ fn execute_source(ctx: &mut Ctx, path: &VimString) -> Result<()> {
         ctx.line,
     );
     ctx.script_id = id;
-    ctx.script_name = name;
+    ctx.script_name = name.to_string();
     ctx.function = None;
     ctx.line = 1;
     let result = (|| -> Result<()> {
-        let statements = parse_script(&source).map_err(|error| ctx.attribute_parse_error(error))?;
+        let statements = parse_script(source).map_err(|error| ctx.attribute_parse_error(error))?;
         match exec_statements(ctx, &statements)? {
             Flow::Normal | Flow::Finish => Ok(()),
             Flow::Return(_) => Err(VimError::new(133, ":return not inside a function")),

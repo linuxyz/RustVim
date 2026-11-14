@@ -29,8 +29,19 @@ const BUILTINS: &[&str] = &[
     "empty",
     "eval",
     "execute",
+    "executable",
+    "search",
     "exists",
     "extend",
+    "hlID",
+    "hlexists",
+    "items",
+    "synID",
+    "synIDattr",
+    "synIDtrans",
+    "system",
+    "systemlist",
+    "win_gettype",
     "filter",
     "float2nr",
     "floor",
@@ -715,6 +726,86 @@ pub(crate) fn call_builtin(ctx: &mut Ctx, name: &str, args: &[Value]) -> Result<
         "getline" => {
             arity(name, args, 0, Some(2))?;
             getline(ctx, args)
+        }
+        "hlexists" => {
+            arity(name, args, 1, Some(1))?;
+            let group = string_arg(arg(args, 0))?.to_string_lossy().into_owned();
+            Ok(Value::Number(i64::from(ctx.host.highlight_id(&group)? > 0)))
+        }
+        "items" => {
+            arity(name, args, 1, Some(1))?;
+            let dict = dict_arg(arg(args, 0))?;
+            let pairs = dict
+                .try_borrow()
+                .map(|dict| {
+                    dict.keys()
+                        .into_iter()
+                        .map(|key| {
+                            let value = dict
+                                .get(&key)
+                                .cloned()
+                                .unwrap_or(Value::Special(crate::value::SpecialValue::Null));
+                            Value::list(vec![Value::String(key), value])
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+            Ok(Value::list(pairs))
+        }
+        "hlID" => {
+            arity(name, args, 1, Some(1))?;
+            let group = string_arg(arg(args, 0))?.to_string_lossy().into_owned();
+            Ok(Value::Number(ctx.host.highlight_id(&group)?))
+        }
+        "synID" => {
+            arity(name, args, 3, Some(3))?;
+            // Position based syntax ids are not modelled; 0 means "no group".
+            Ok(Value::Number(0))
+        }
+        "synIDtrans" => {
+            arity(name, args, 1, Some(1))?;
+            Ok(Value::Number(number_arg(arg(args, 0))?))
+        }
+        "synIDattr" => {
+            arity(name, args, 2, Some(3))?;
+            // Highlight attributes beyond the group ids are not exposed.
+            Ok(Value::String(VimString::new()))
+        }
+        "system" => {
+            arity(name, args, 1, Some(2))?;
+            let command = string_arg(arg(args, 0))?.to_string_lossy().into_owned();
+            let output = ctx.host.system_output(&command)?;
+            let mut text = String::from_utf8_lossy(&output).into_owned();
+            text = text.replace('\0', "\n");
+            Ok(Value::String(VimString::from(text)))
+        }
+        "systemlist" => {
+            arity(name, args, 1, Some(2))?;
+            let command = string_arg(arg(args, 0))?.to_string_lossy().into_owned();
+            let output = ctx.host.system_output(&command)?;
+            let text = String::from_utf8_lossy(&output).into_owned();
+            let mut lines: Vec<Value> = text
+                .split('\n')
+                .map(|line| Value::String(VimString::from(line)))
+                .collect();
+            if text.ends_with('\n') {
+                lines.pop();
+            }
+            Ok(Value::list(lines))
+        }
+        "win_gettype" => {
+            arity(name, args, 0, Some(1))?;
+            // RVim does not model window types such as command/preview windows.
+            Ok(Value::String(VimString::from("unknown")))
+        }
+        "executable" => {
+            arity(name, args, 1, Some(1))?;
+            let text = string_arg(arg(args, 0))?.to_string_lossy().into_owned();
+            Ok(Value::Number(i64::from(executable_exists(&text))))
+        }
+        "search" => {
+            arity(name, args, 1, Some(4))?;
+            search(ctx, args)
         }
         "setline" => {
             arity(name, args, 2, Some(2))?;
@@ -1983,10 +2074,26 @@ fn map_or_filter(ctx: &mut Ctx, args: &[Value], map: bool) -> Result<Value> {
                 }
                 Ok(arg(args, 0).clone())
             }
+            Value::String(text) => {
+                let characters: Vec<char> = text.to_string_lossy().chars().collect();
+                let mut output = String::new();
+                for (index, character) in characters.iter().enumerate() {
+                    ctx.runtime.set_vvar("key", Value::Number(index as i64));
+                    let item = Value::String(VimString::from(character.to_string()));
+                    ctx.runtime.set_vvar("val", item.clone());
+                    let result = evaluate_map_item(ctx, &compiled, &expression, index, &item)?;
+                    if map {
+                        output.push_str(&ops::to_string(&result)?.to_string_lossy());
+                    } else if ops::truthy(&result)? {
+                        output.push(*character);
+                    }
+                }
+                Ok(Value::String(VimString::from(output)))
+            }
             other => Err(VimError::new(
                 712,
                 format!(
-                    "map()/filter() requires a List or Dictionary, found {}",
+                    "map()/filter() requires a List, Dictionary or String, found {}",
                     other.type_name()
                 ),
             )),
@@ -2154,6 +2261,95 @@ fn builtin_exists(ctx: &mut Ctx, expression: &VimString) -> Result<Value> {
     Ok(Value::Number(i64::from(
         eval::get_var(ctx, None, &name).is_ok(),
     )))
+}
+
+/// True when a file named `name` exists and is executable.
+fn executable_exists(name: &str) -> bool {
+    use std::path::Path;
+    #[cfg(unix)]
+    fn is_executable(path: &Path) -> bool {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::metadata(path)
+            .map(|metadata| metadata.is_file() && metadata.permissions().mode() & 0o111 != 0)
+            .unwrap_or(false)
+    }
+    #[cfg(not(unix))]
+    fn is_executable(path: &Path) -> bool {
+        path.is_file()
+    }
+    if name.contains('/') || name.contains('\\') {
+        return is_executable(Path::new(name));
+    }
+    let Some(paths) = std::env::var_os("PATH") else {
+        return false;
+    };
+    std::env::split_paths(&paths).any(|directory| {
+        let candidate = directory.join(name);
+        is_executable(&candidate)
+    })
+}
+
+/// `search({pattern} [, {flags} [, {stopline} [, {timeout}]]])`.
+///
+/// The search is buffer based.  It returns the matching line number (1 based)
+/// or zero.  Cursor movement is not modelled, so the 'n' flag is irrelevant
+/// and 'c'/'e'/'s' only influence the starting line.
+fn search(ctx: &mut Ctx, args: &[Value]) -> Result<Value> {
+    let text = string_arg(arg(args, 0))?;
+    let compiled = pattern::compile(text.as_bytes())?;
+    let flags = if args.len() >= 2 {
+        string_arg(arg(args, 1))?.to_string_lossy().into_owned()
+    } else {
+        String::new()
+    };
+    let stopline = if args.len() >= 3 {
+        match arg(args, 2) {
+            Value::String(value) if value.is_empty() => None,
+            value => Some(ops::to_number(value)?),
+        }
+    } else {
+        None
+    };
+    let ignorecase = matches!(
+        ctx.host
+            .get_option(crate::host::OptionScope::Global, "ignorecase"),
+        Ok(Value::Number(value)) if value != 0
+    );
+    let total = ctx.host.line_count()?;
+    if total <= 0 {
+        return Ok(Value::Number(0));
+    }
+    let current = ctx.host.current_line()?.clamp(1, total);
+    let backward = flags.contains('b');
+    let wrap = !flags.contains('W');
+    let mut candidates: Vec<i64> = Vec::new();
+    if backward {
+        let stop = stopline.map_or(1, |line| line.clamp(1, total));
+        if stop <= current {
+            candidates.extend((stop..=current).rev());
+        }
+        if wrap {
+            candidates.extend((current + 1..=total).rev());
+        }
+    } else {
+        let stop = stopline.map_or(total, |line| line.clamp(1, total));
+        if stop >= current {
+            candidates.extend(current..=stop);
+        }
+        if wrap {
+            candidates.extend(1..current);
+        }
+    }
+    for line in candidates {
+        if line < 1 || line > total {
+            continue;
+        }
+        let content = ctx.host.get_line(line)?;
+        if pattern::find(&compiled, content.as_bytes(), 0, ignorecase).is_some() {
+            return Ok(Value::Number(line));
+        }
+    }
+    Ok(Value::Number(0))
 }
 
 fn getline(ctx: &mut Ctx, args: &[Value]) -> Result<Value> {
