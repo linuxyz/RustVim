@@ -215,6 +215,9 @@ Still approximated or missing in P2:
 - Folds are recomputed when the buffer or fold options change; there is no
   incremental fold update for very large files, and manual folds are not yet
   written by `:mksession`/`:mkview`.
+- `zf` works in Normal mode (and through `:fold`); Visual-mode `zf` and the
+  count forms of `zF` are not implemented. `'fillchars'` fold characters are
+  assumed to be single-cell characters.
 - Sign icons/images are parsed but not drawn (no GUI/image API); only the first
   sign of a line is displayed, and `culhl` is accepted but not rendered.
 
