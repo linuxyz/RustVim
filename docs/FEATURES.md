@@ -516,6 +516,11 @@ Gate: folds, signs, text properties, popups and diff render correctly in
 headless frames; fold/sign/property APIs survive edits and undo; diff output
 matches the internal diff oracle.
 
+Implemented so far: DSP-01, DSP-02, DSP-03 (folding) and DSP-04 (signs); see
+[STATUS.md](STATUS.md) for the implemented surface and the documented
+approximations. DSP-05..07 (text properties, virtual text, popups) and
+DSP-11/12 (diff) remain P2 work.
+
 | ID | Feature | Ph | Cx | Deps | Scope |
 |---|---|---|---|---|---|
 | DSP-01 | Fold engine and methods | P2 | L | BUF-01, REGEX-06 | `'foldmethod'` manual/indent/expr/marker/syntax/diff, fold levels, `'foldignore'`/`'foldnestmax'`/`'foldminlines'`, fold text, per-window fold state. |
