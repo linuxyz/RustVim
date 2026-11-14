@@ -1,0 +1,25 @@
+[package]
+name = "rvim-cli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "RVim: a Rust implementation of Vim"
+
+[dependencies]
+rvim-types.workspace = true
+rvim-ui-api.workspace = true
+rvim-platform.workspace = true
+rvim-text.workspace = true
+rvim-regex.workspace = true
+rvim-ex.workspace = true
+rvim-edit.workspace = true
+rvim-runtime.workspace = true
+rvim-view.workspace = true
+rvim-editor.workspace = true
+rvim-tui.workspace = true
+rvim-headless.workspace = true
+
+[[bin]]
+name = "rvim"
+path = "src/main.rs"

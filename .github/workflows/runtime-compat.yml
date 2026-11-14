@@ -1,0 +1,30 @@
+name: runtime-compat
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "0 4 * * 1"
+  workflow_dispatch:
+
+jobs:
+  matrix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.85
+      - name: build CLI
+        run: cargo build -p rvim-cli
+      - name: fetch pinned runtime
+        run: |
+          curl -fsSL -o /tmp/vim.tar.gz https://github.com/vim/vim/archive/refs/tags/v9.2.1338.tar.gz
+          tar xzf /tmp/vim.tar.gz -C /tmp
+          echo "VIMRUNTIME=/tmp/vim-9.2.1338/runtime" >> "$GITHUB_ENV"
+      - name: run tier A/B (gated)
+        run: python3 tools/runtime_compat.py --runtime "$VIMRUNTIME" --tiers a,b --gate
+      - name: run tier C (report only)
+        run: python3 tools/runtime_compat.py --runtime "$VIMRUNTIME" --tiers c
+      - uses: actions/upload-artifact@v4
+        with:
+          name: compat-report
+          path: target/compat/

@@ -1,0 +1,9 @@
+{
+  "name": "vim",
+  "tag": "v9.2.1338",
+  "url": "https://github.com/vim/vim/archive/refs/tags/v9.2.1338.tar.gz",
+  "archive_sha256": "eeb4370a8db32041af1c3b05159bdeeea6b781f5a32d0f1f68bd0c51d45880f3",
+  "source_version": "9.2",
+  "runtime_dir": "runtime",
+  "notes": "Unmodified Vim runtime. Test fixtures under testdir/ are excluded from inventory counts. The tag's version9.txt groups some additions under added-9.3; this tag is authoritative for RVim."
+}

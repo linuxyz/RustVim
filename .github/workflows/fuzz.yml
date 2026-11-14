@@ -1,0 +1,16 @@
+name: fuzz
+on:
+  schedule:
+    - cron: "17 3 * * 1"
+  workflow_dispatch:
+
+jobs:
+  fuzz:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+      - run: cargo install cargo-fuzz --locked
+      - run: cargo fuzz run regex -- -max_total_time=60
+      - run: cargo fuzz run syntax -- -max_total_time=60
+      - run: cargo fuzz run viml -- -max_total_time=60

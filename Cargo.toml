@@ -1,0 +1,47 @@
+[workspace]
+resolver = "2"
+members = [
+  "crates/rvim-types",
+  "crates/rvim-ui-api",
+  "crates/rvim-platform",
+  "crates/rvim-text",
+  "crates/rvim-regex",
+  "crates/rvim-viml",
+  "crates/rvim-ex",
+  "crates/rvim-edit",
+  "crates/rvim-syntax",
+  "crates/rvim-runtime",
+  "crates/rvim-js",
+  "crates/rvim-view",
+  "crates/rvim-editor",
+  "crates/rvim-tui",
+  "crates/rvim-headless",
+  "crates/rvim-cli",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.85"
+license = "MIT"
+
+[workspace.dependencies]
+rvim-syntax = { path = "crates/rvim-syntax" }
+rvim-types = { path = "crates/rvim-types" }
+rvim-ui-api = { path = "crates/rvim-ui-api" }
+rvim-platform = { path = "crates/rvim-platform" }
+rvim-text = { path = "crates/rvim-text" }
+rvim-regex = { path = "crates/rvim-regex" }
+rvim-viml = { path = "crates/rvim-viml" }
+rvim-ex = { path = "crates/rvim-ex" }
+rvim-edit = { path = "crates/rvim-edit" }
+rvim-runtime = { path = "crates/rvim-runtime" }
+rvim-view = { path = "crates/rvim-view" }
+rvim-editor = { path = "crates/rvim-editor" }
+rvim-tui = { path = "crates/rvim-tui" }
+rvim-headless = { path = "crates/rvim-headless" }
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+panic = "abort"

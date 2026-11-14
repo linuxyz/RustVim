@@ -1,0 +1,11 @@
+import pathlib
+p = pathlib.Path("docs/STATUS.md")
+s = p.read_text()
+s = s.replace("| TST-01 test harness | done | 289 workspace tests at last run |", "| TST-01 test harness | done | 306 workspace tests at last run |")
+s = s.replace("At the time of writing the workspace has 289 tests and no clippy warnings.", "At the time of writing the workspace has 306 tests and no clippy warnings.")
+s = s.replace("- **Statusline:** %f/%F/%t/%m/%M/%r/%R/%h/%H/%y/%l/%L/%c/%v/%a/%{...}/%=/%<, expression caching, g:statusline_winid.", "- **Statusline:** %f/%F/%t/%m/%M/%r/%R/%h/%H/%y/%l/%L/%c/%v/%a/%{...}/%=/%<, expression caching, g:statusline_winid, and %[FuncName] clickable regions with minwid and click metadata.")
+s = s.replace("- **Quickfix:** list model, :cfile, :copen/:cclose, :cnext, make/grep ingestion, Vim-style errorformat including multi-line %A/%C/%Z groups.", "- **Quickfix:** list model, :cfile, :copen/:cclose, :cnext, make/grep ingestion, Vim-style errorformat including multi-line %A/%C/%Z groups.\n- **Substitute:** g/i/I/e/n/p/#/l/count/& flags, count-selected matches, :s repeat, :&, ~ replacement, case regions.\n- **Editing:** replace mode overwrites text; dot repeats recorded insert/operator key sequences; visual block d/y/c/case operations.\n- **Ex modifiers:** :silent/:silent!, :noautocmd, :keepjumps, :tab, :vertical; global-local :set/:setlocal/:setglobal values; :setf/:setfiletype.\n- **Shell:** shell/shellcmdflag/shellxquote honored, range filters (:1,3!cmd), v:shell_error, :redir to files/registers/variables.")
+s = s.replace("- Statusline item clicks; resizing is weighted, not cell-exact.", "- Statusline clicks cover the statusline; tabline %[Func] dispatch and multi-row statusline are still missing.")
+s = s.replace("- Insert completion and deeper cindent/smartindent engines; indentexpr is supported.", "- Insert completion, deeper cindent/smartindent, and full completion-context detection; indentexpr is supported.")
+p.write_text(s)
+print("updated")

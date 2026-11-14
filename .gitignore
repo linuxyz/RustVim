@@ -1,0 +1,8 @@
+/target
+**/*.rs.bk
+.DS_Store
+/runtime/
+*.swp
+*.swo
+/docs/inventory/__pycache__/
+/tools/__pycache__/

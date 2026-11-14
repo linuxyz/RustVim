@@ -1,0 +1,37 @@
+[package]
+name = "rvim-fuzz"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+rvim-regex = { path = "../crates/rvim-regex" }
+rvim-syntax = { path = "../crates/rvim-syntax" }
+rvim-viml = { path = "../crates/rvim-viml" }
+
+[[bin]]
+name = "regex"
+path = "fuzz_targets/regex.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "syntax"
+path = "fuzz_targets/syntax.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "viml"
+path = "fuzz_targets/viml.rs"
+test = false
+doc = false
+bench = false
+
+[workspace]

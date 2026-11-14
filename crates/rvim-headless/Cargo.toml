@@ -1,0 +1,23 @@
+[package]
+name = "rvim-headless"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "RVim: a Rust implementation of Vim"
+
+[dependencies]
+rvim-ui-api.workspace = true
+
+[dev-dependencies]
+rvim-editor = { path = "../rvim-editor" }
+rvim-regex = { path = "../rvim-regex" }
+rvim-syntax = { path = "../rvim-syntax" }
+
+[[bench]]
+name = "render"
+harness = false
+
+[[bench]]
+name = "workloads"
+harness = false

@@ -1,0 +1,4461 @@
+{
+ "target": "Vim 9.2.1338",
+ "source": "docs/FEATURES.md",
+ "counts": {
+  "total": 346,
+  "by_phase": {
+   "P0": 29,
+   "P1": 148,
+   "P2": 103,
+   "P3": 52,
+   "P4": 14
+  },
+  "by_area": {
+   "FND": 10,
+   "OPT": 9,
+   "BUF": 17,
+   "UND": 6,
+   "WIN": 12,
+   "TAB": 8,
+   "UI": 15,
+   "STA": 8,
+   "CMD": 7,
+   "MSG": 6,
+   "EDT": 25,
+   "INS": 12,
+   "VIS": 5,
+   "EX": 13,
+   "MAP": 8,
+   "AUC": 8,
+   "VIML": 18,
+   "FUN": 18,
+   "REGEX": 9,
+   "SYN": 13,
+   "DSP": 14,
+   "QF": 8,
+   "TAG": 8,
+   "SPELL": 8,
+   "JOB": 8,
+   "JS": 12,
+   "RT": 18,
+   "ENC": 8,
+   "CRYPT": 4,
+   "SEC": 6,
+   "TST": 8,
+   "MISC": 12,
+   "VIM9": 5
+  }
+ },
+ "areas": {
+  "FND": "Foundation and process",
+  "OPT": "Options",
+  "BUF": "Buffers and files",
+  "UND": "Undo and redo",
+  "WIN": "Windows and layout",
+  "TAB": "Tab pages",
+  "UI": "UI protocol, compositor and TUI",
+  "STA": "Statusline and tabline widgets",
+  "CMD": "Command line",
+  "MSG": "Messages, errors and prompts",
+  "EDT": "Editing core",
+  "INS": "Insert and replace modes",
+  "VIS": "Visual and Select modes",
+  "EX": "Ex command engine",
+  "MAP": "Mappings and keys",
+  "AUC": "Autocommands",
+  "VIML": "Legacy Vim script",
+  "FUN": "Built-in function families",
+  "REGEX": "Vim regular expressions",
+  "SYN": "Syntax and highlighting",
+  "DSP": "Display features",
+  "QF": "Quickfix and location lists",
+  "TAG": "Tags and help",
+  "SPELL": "Spell checking",
+  "JOB": "Jobs, channels and timers",
+  "JS": "QuickJS integration",
+  "RT": "Vim runtime compatibility",
+  "ENC": "Encoding and multibyte text",
+  "CRYPT": "Encryption",
+  "SEC": "Security, sandbox and limits",
+  "TST": "Testing and quality",
+  "MISC": "Platform and optional features",
+  "VIM9": "Deferred Vim9 script"
+ },
+ "features": [
+  {
+   "id": "FND-01",
+   "area": "FND",
+   "area_name": "Foundation and process",
+   "title": "Cargo workspace and crate graph",
+   "phase": "P0",
+   "complexity": "S",
+   "deps": [],
+   "scope": "Workspace with the crates in ARCHITECTURE.md, feature flags, CI on macOS/Linux, pinned MSRV, license notices."
+  },
+  {
+   "id": "FND-02",
+   "area": "FND",
+   "area_name": "Foundation and process",
+   "title": "Core IDs, errors and diagnostics",
+   "phase": "P0",
+   "complexity": "S",
+   "deps": [
+    "FND-01"
+   ],
+   "scope": "Newtypes for buffer/window/tab/script IDs; `VimError` with `E###` codes, message text and throwpoint; no panics across API boundaries."
+  },
+  {
+   "id": "FND-03",
+   "area": "FND",
+   "area_name": "Foundation and process",
+   "title": "Event loop and redraw scheduler",
+   "phase": "P0",
+   "complexity": "L",
+   "deps": [
+    "FND-01"
+   ],
+   "scope": "Single-threaded scheduler for input, timers, job events, screen resize and deferred redraw; nearest-deadline waits; no busy loop."
+  },
+  {
+   "id": "FND-04",
+   "area": "FND",
+   "area_name": "Foundation and process",
+   "title": "Registries for commands/options/functions/events",
+   "phase": "P0",
+   "complexity": "M",
+   "deps": [
+    "FND-02"
+   ],
+   "scope": "One metadata table per surface: name, abbreviation, arity, flags, feature gate, doc tag, handler. Drives parsing, completion, `:help` and the inventory audit."
+  },
+  {
+   "id": "FND-05",
+   "area": "FND",
+   "area_name": "Foundation and process",
+   "title": "Editor state ownership and arenas",
+   "phase": "P0",
+   "complexity": "M",
+   "deps": [
+    "FND-02"
+   ],
+   "scope": "`Editor` owns buffers, windows, tab pages, scripts, registers, marks and global variables; slotmap/indexmap arenas, explicit borrow-splitting for render."
+  },
+  {
+   "id": "FND-06",
+   "area": "FND",
+   "area_name": "Foundation and process",
+   "title": "Headless driver and golden frames",
+   "phase": "P0",
+   "complexity": "M",
+   "deps": [
+    "FND-01",
+    "UI-12"
+   ],
+   "scope": "Scriptable editor driver: feed keys, run Ex, inspect model, snapshot Frame; used by every subsystem test."
+  },
+  {
+   "id": "FND-07",
+   "area": "FND",
+   "area_name": "Foundation and process",
+   "title": "Platform abstraction",
+   "phase": "P0",
+   "complexity": "L",
+   "deps": [
+    "FND-01"
+   ],
+   "scope": "Filesystem, process spawn, PTY, signals, terminal size, clipboard, locale, environment; Unix first, Windows behind the same traits."
+  },
+  {
+   "id": "FND-08",
+   "area": "FND",
+   "area_name": "Foundation and process",
+   "title": "Benchmark and fuzz harness",
+   "phase": "P1",
+   "complexity": "M",
+   "deps": [
+    "FND-06"
+   ],
+   "scope": "Criterion-style benchmarks for startup, frame render, regex, syntax and large files; cargo-fuzz targets for parsers and input."
+  },
+  {
+   "id": "FND-09",
+   "area": "FND",
+   "area_name": "Foundation and process",
+   "title": "CLI and startup orchestrator",
+   "phase": "P1",
+   "complexity": "M",
+   "deps": [
+    "FND-04",
+    "FND-07"
+   ],
+   "scope": "Args (`-c`, `-S`, `-u`, `--clean`, `-p`, `-o`, `-O`, `-R`, `-r`, `--headless`, `--stdio-channel` handoff), init order, `--startuptime`, exit codes; `--headless` is an RVim extension."
+  },
+  {
+   "id": "FND-10",
+   "area": "FND",
+   "area_name": "Foundation and process",
+   "title": "Tracing and verbose diagnostics",
+   "phase": "P1",
+   "complexity": "S",
+   "deps": [
+    "FND-02"
+   ],
+   "scope": "Category-based logs (`input`, `ex`, `viml`, `render`, `runtime`, `job`, `js`), `'verbose'` levels, `:verbose` source tracing, crash report."
+  },
+  {
+   "id": "OPT-01",
+   "area": "OPT",
+   "area_name": "Options",
+   "title": "Option registry and typed values",
+   "phase": "P0",
+   "complexity": "L",
+   "deps": [
+    "FND-04"
+   ],
+   "scope": "All Vim 9.2.1338 options with type, scope, default, flags, validator, short name and doc tag; boolean/number/string with typed storage, not stringly-typed; feature-gated options report availability honestly."
+  },
+  {
+   "id": "OPT-02",
+   "area": "OPT",
+   "area_name": "Options",
+   "title": "`:set` parser, flags and abbreviations",
+   "phase": "P0",
+   "complexity": "M",
+   "deps": [
+    "OPT-01"
+   ],
+   "scope": "`set`/`setlocal`/`setglobal`, `?`, `&`, `&vim`, `!`, `inv`, `no`, `+=`/`-=`/`^=`, `<` reset, `all`, unambiguous abbreviations."
+  },
+  {
+   "id": "OPT-03",
+   "area": "OPT",
+   "area_name": "Options",
+   "title": "Scopes, inheritance and global-local options",
+   "phase": "P1",
+   "complexity": "L",
+   "deps": [
+    "OPT-01"
+   ],
+   "scope": "Global, buffer, window and tab scopes; global-local options (`'statusline'`, `'errorformat'`, `'tags'`); `:setlocal` fallback semantics; option <-> window ownership."
+  },
+  {
+   "id": "OPT-04",
+   "area": "OPT",
+   "area_name": "Options",
+   "title": "Option access from VimL",
+   "phase": "P1",
+   "complexity": "M",
+   "deps": [
+    "OPT-03",
+    "VIML-03"
+   ],
+   "scope": "`&opt`, `&l:opt`, `&g:opt`, `setbufvar()`/`setwinvar()` option keys, `getbufvar()` readback, option reset rules."
+  },
+  {
+   "id": "OPT-05",
+   "area": "OPT",
+   "area_name": "Options",
+   "title": "Defaults and reset semantics",
+   "phase": "P1",
+   "complexity": "S",
+   "deps": [
+    "OPT-02"
+   ],
+   "scope": "Vim defaults (not Vi), `&vim`/`all&`, `--clean`, `-u DEFAULTS`, exclusion of `'compatible'` behavior, startup option files."
+  },
+  {
+   "id": "OPT-06",
+   "area": "OPT",
+   "area_name": "Options",
+   "title": "Modelines",
+   "phase": "P1",
+   "complexity": "M",
+   "deps": [
+    "OPT-03"
+   ],
+   "scope": "`'modeline'`/`'modelines'`/`'modelinestrict'` parsing, first/last N lines, safe-option allowlist, secure filtering, OptionSet side effects and tests."
+  },
+  {
+   "id": "OPT-07",
+   "area": "OPT",
+   "area_name": "Options",
+   "title": "TTY and `t_*` options",
+   "phase": "P2",
+   "complexity": "M",
+   "deps": [
+    "OPT-01",
+    "UI-05"
+   ],
+   "scope": "`:set termcap`, `t_Co`/`t_AB`-style key codes bridged to the TUI key table; capability reporting; never let UI code own Vim option semantics."
+  },
+  {
+   "id": "OPT-08",
+   "area": "OPT",
+   "area_name": "Options",
+   "title": "`:options` window",
+   "phase": "P2",
+   "complexity": "M",
+   "deps": [
+    "OPT-03",
+    "BUF-09"
+   ],
+   "scope": "`optwin.vim` compatibility: synthetic buffer, per-option jump tags, toggling and `:set` round-trip."
+  },
+  {
+   "id": "OPT-09",
+   "area": "OPT",
+   "area_name": "Options",
+   "title": "OptionSet event and side effects",
+   "phase": "P1",
+   "complexity": "M",
+   "deps": [
+    "OPT-03",
+    "AUC-01"
+   ],
+   "scope": "Fire `OptionSet` with `v:option_*`, apply side effects (wrap, numberwidth, syntax, filetype, foldmethod), avoid recursive set storms."
+  },
+  {
+   "id": "BUF-01",
+   "area": "BUF",
+   "area_name": "Buffers and files",
+   "title": "Line buffer and byte indexing",
+   "phase": "P0",
+   "complexity": "L",
+   "deps": [
+    "ENC-01",
+    "FND-05"
+   ],
+   "scope": "Stable line IDs, byte-indexed access, NUL/NL fidelity, `changedtick`, O(log n) line insert/delete via chunked line tree, O(1) line count."
+  },
+  {
+   "id": "BUF-02",
+   "area": "BUF",
+   "area_name": "Buffers and files",
+   "title": "Buffer list and lifecycle",
+   "phase": "P1",
+   "complexity": "L",
+   "deps": [
+    "BUF-01"
+   ],
+   "scope": "Listed/unlisted, loaded/unloaded, hidden, `:badd`/`:bufadd`/`:bufload`/`:bdelete`/`:bwipeout`, alternate buffer `#`, `CTRL-^`/`CTRL-6`, `BufAdd/BufDelete/BufUnload` events."
+  },
+  {
+   "id": "BUF-03",
+   "area": "BUF",
+   "area_name": "Buffers and files",
+   "title": "File read/write core",
+   "phase": "P0",
+   "complexity": "L",
+   "deps": [
+    "BUF-01",
+    "FND-07"
+   ],
+   "scope": "`:edit`/`:write`/`:read`, address ranges, `:write !cmd`, `:read !cmd`, filters, permissions, `'writeany'`, partial writes, errors without data loss."
+  },
+  {
+   "id": "BUF-04",
+   "area": "BUF",
+   "area_name": "Buffers and files",
+   "title": "File format, EOL and BOM",
+   "phase": "P1",
+   "complexity": "M",
+   "deps": [
+    "BUF-03"
+   ],
+   "scope": "`'fileformat'` unix/dos/mac, `'fileformats'` detection, `'endofline'`, `'fixendofline'`, `'bomb'`, mixed-EOL reporting, byte-exact rewrite."
+  },
+  {
+   "id": "BUF-05",
+   "area": "BUF",
+   "area_name": "Buffers and files",
+   "title": "File encodings and iconv",
+   "phase": "P1",
+   "complexity": "L",
+   "deps": [
+    "BUF-03",
+    "ENC-02"
+   ],
+   "scope": "`'fileencoding'`, `'fileencodings'` probe order, BOM/UTF-16, iconv fallback, `:scriptencoding`; internal encoding is UTF-8 only."
+  },
+  {
+   "id": "BUF-06",
+   "area": "BUF",
+   "area_name": "Buffers and files",
+   "title": "Backup, swap and recovery",
+   "phase": "P1",
+   "complexity": "L",
+   "deps": [
+    "BUF-03",
+    "FND-07"
+   ],
+   "scope": "`'backup'`/`'writebackup'`/`'backupcopy'`/`'backupskip'`, swap file naming/permissions/`'updatetime'`, `:preserve`, `:recover`, `-r`, `v:swapchoice`."
+  },
+  {
+   "id": "BUF-07",
+   "area": "BUF",
+   "area_name": "Buffers and files",
+   "title": "Marks, jumplist, changelist",
+   "phase": "P1",
+   "complexity": "L",
+   "deps": [
+    "BUF-01"
+   ],
+   "scope": "`a-z`/`A-Z`/`0-9` marks, special marks `'` `.` `^` `[` `]` `<` `>`, mark adjustment on edits, jumplist `<C-o>/<C-i>`, changelist `g;/g,`, `getmarklist()`."
+  },
+  {
+   "id": "BUF-08",
+   "area": "BUF",
+   "area_name": "Buffers and files",
+   "title": "Buffer-local variables and options",
+   "phase": "P1",
+   "complexity": "M",
+   "deps": [
+    "BUF-01",
+    "OPT-03"
+   ],
+   "scope": "`b:` variables, buffer options, `b:changedtick`, `getbufvar()`/`setbufvar()`, `:let b:...`; lifetime tied to buffer wipe."
+  },
+  {
+   "id": "BUF-09",
+   "area": "BUF",
+   "area_name": "Buffers and files",
+   "title": "Special buffer types",
+   "phase": "P1",
+   "complexity": "M",
+   "deps": [
+    "BUF-02"
+   ],
+   "scope": "`'buftype'` nofile/nowrite/acwrite/quickfix/help/prompt, `'bufhidden'`, `'swapfile'`, `'modifiable'`/`'readonly'` enforcement and plugin hooks."
+  },
+  {
+   "id": "BUF-10",
+   "area": "BUF",
+   "area_name": "Buffers and files",
+   "title": "Argument list",
+   "phase": "P1",
+   "complexity": "M",
+   "deps": [
+    "BUF-02"
+   ],
+   "scope": "Local/global arglists, `:args`/`:next`/`:prev`/`:rewind`/`:argument`/`:argadd`/`:argdelete`, `argadd()`/`argv()`, `:argdo`."
+  },
+  {
+   "id": "BUF-11",
+   "area": "BUF",
+   "area_name": "Buffers and files",
+   "title": "Working directory and path handling",
+   "phase": "P1",
+   "complexity": "M",
+   "deps": [
+    "BUF-02",
+    "FND-07"
+   ],
+   "scope": "`:cd`/`:lcd`/`:tcd`/`:pwd`, `'autochdir'`, `'path'`, `findfile()`/`finddir()`, `DirChanged` events, filename modifiers and escaping."
+  },
+  {
+   "id": "BUF-12",
+   "area": "BUF",
+   "area_name": "Buffers and files",
+   "title": "File-changed detection",
+   "phase": "P2",
+   "complexity": "M",
+   "deps": [
+    "BUF-03",
+    "AUC-01"
+   ],
+   "scope": "`'autoread'`, `:checktime`, `FileChangedShell`/`FileChangedShellPost`, timestamp/size checks, dialog and `v:swapchoice` handling."
+  },
+  {
+   "id": "BUF-13",
+   "area": "BUF",
+   "area_name": "Buffers and files",
+   "title": "Large files and binary mode",
+   "phase": "P2",
+   "complexity": "L",
+   "deps": [
+    "BUF-01"
+   ],
+   "scope": "`-b`, `'binary'`, `'maxmem'`-style limits, memory-mapped/paged line store option, huge-line handling, no quadratically slow edits."
+  },
+  {
+   "id": "BUF-14",
+   "area": "BUF",
+   "area_name": "Buffers and files",
+   "title": "Sessions and views",
+   "phase": "P2",
+   "complexity": "L",
+   "deps": [
+    "BUF-02",
+    "WIN-01",
+    "OPT-03"
+   ],
+   "scope": "`:mksession`/`:mkview`/`:loadview`, `'sessionoptions'`/`'viewoptions'`, `SessionLoadPre`, window layout, folds, marks and local options, `v:this_session`."
+  },
+  {
+   "id": "BUF-15",
+   "area": "BUF",
+   "area_name": "Buffers and files",
+   "title": "Viminfo and Shada",
+   "phase": "P2",
+   "complexity": "L",
+   "deps": [
+    "BUF-07",
+    "FND-07"
+   ],
+   "scope": "`'viminfo'`/`'shada'` parsing, history/registers/marks/`'0`-`'9`/oldfiles persistence, `:rviminfo`/`:wviminfo`, locking and corruption handling."
+  },
+  {
+   "id": "BUF-16",
+   "area": "BUF",
+   "area_name": "Buffers and files",
+   "title": "Buffer text listeners",
+   "phase": "P2",
+   "complexity": "M",
+   "deps": [
+    "BUF-01"
+   ],
+   "scope": "`listener_add()`/`listener_remove()`, change notifications with start/end/added/touched, callback safety and reentrancy guards."
+  },
+  {
+   "id": "BUF-17",
+   "area": "BUF",
+   "area_name": "Buffers and files",
+   "title": "File identity, permissions and `:saveas`",
+   "phase": "P1",
+   "complexity": "S",
+   "deps": [
+    "BUF-03"
+   ],
+   "scope": "`:file`/`:saveas`, read-only file handling, ownership/mode preservation, `'readonly'` override with `!`."
+  },
+  {
+   "id": "UND-01",
+   "area": "UND",
+   "area_name": "Undo and redo",
+   "title": "Undo tree and undo blocks",
+   "phase": "P0",
+   "complexity": "L",
+   "deps": [
+    "BUF-01"
+   ],
+   "scope": "Branching undo tree, sequence numbers, time stamps, block boundaries for insert/operator/Ex edits, `'undolevels'` pruning, `undotree()` data."
+  },
+  {
+   "id": "UND-02",
+   "area": "UND",
+   "area_name": "Undo and redo",
+   "title": "`u`/`<C-r>` and counts",
+   "phase": "P1",
+   "complexity": "M",
+   "deps": [
+    "UND-01",
+    "EDT-01"
+   ],
+   "scope": "Counted undo/redo, cursor restore, `'undolevels'` negative/zero special cases, message reporting."
+  },
+  {
+   "id": "UND-03",
+   "area": "UND",
+   "area_name": "Undo and redo",
+   "title": "Ex undo navigation",
+   "phase": "P1",
+   "complexity": "M",
+   "deps": [
+    "UND-01",
+    "EX-01"
+   ],
+   "scope": "`:undo`, `:redo`, `:earlier`/`:later` with counts and time units (`s`, `m`, `h`, `d`, `f`), `g-`/`g+`."
+  },
+  {
+   "id": "UND-04",
+   "area": "UND",
+   "area_name": "Undo and redo",
+   "title": "`:undojoin` and undo state APIs",
+   "phase": "P2",
+   "complexity": "M",
+   "deps": [
+    "UND-01",
+    "VIML-14"
+   ],
+   "scope": "`:undojoin`, `undojoin` from VimL, cursor/visual state restore, `undotree()`, `wundo()`/`rundo()` entry points."
+  },
+  {
+   "id": "UND-05",
+   "area": "UND",
+   "area_name": "Undo and redo",
+   "title": "Persistent undo",
+   "phase": "P2",
+   "complexity": "L",
+   "deps": [
+    "UND-01",
+    "BUF-07"
+   ],
+   "scope": "`'undofile'`/`'undodir'`, `:wundo`/`:rundo`, Vim-compatible undo file format (versioned), permissions and cleanup."
+  },
+  {
+   "id": "UND-06",
+   "area": "UND",
+   "area_name": "Undo and redo",
+   "title": "Undo across reload and `'undoreload'`",
+   "phase": "P2",
+   "complexity": "M",
+   "deps": [
+    "UND-05",
+    "BUF-03"
+   ],
+   "scope": "Preserve undo when rereading unchanged files, `'undoreload'` limit, `:e!` semantics, stale undo detection."
+  },
+  {
+   "id": "WIN-01",
+   "area": "WIN",
+   "area_name": "Windows and layout",
+   "title": "Split tree, layout and sizes",
+   "phase": "P0",
+   "complexity": "L",
+   "deps": [
+    "FND-05",
+    "UI-01"
+   ],
+   "scope": "Frame tree of horizontal/vertical splits, min sizes, `'equalalways'`/`'eadirection'`, resize propagation, deterministic geometry for tests."
+  },
+  {
+   "id": "WIN-02",
+   "area": "WIN",
+   "area_name": "Windows and layout",
+   "title": "Viewport, cursor and scroll state",
+   "phase": "P1",
+   "complexity": "L",
+   "deps": [
+    "WIN-01",
+    "BUF-01"
+   ],
+   "scope": "Per-window `topline`/`leftcol`/`skipcol`/`curswant`, independent cursors for one buffer, scrolloff, cursor clamping, `winsaveview()`/`winrestview()`."
+  },
+  {
+   "id": "WIN-03",
+   "area": "WIN",
+   "area_name": "Windows and layout",
+   "title": "Window-local options and variables",
+   "phase": "P1",
+   "complexity": "M",
+   "deps": [
+    "WIN-01",
+    "OPT-03"
+   ],
+   "scope": "`w:` variables, window options (`'number'`, `'wrap'`, `'foldmethod'`, `'signcolumn'`...), inheritance on split and `:setlocal`."
+  },
+  {
+   "id": "WIN-04",
+   "area": "WIN",
+   "area_name": "Windows and layout",
+   "title": "Window commands and `:wincmd`",
+   "phase": "P1",
+   "complexity": "M",
+   "deps": [
+    "WIN-01",
+    "EX-01"
+   ],
+   "scope": "`:split`/`:vsplit`/`:new`/`:vnew`/`:close`/`:only`/`:hide`/`:quit`/`:resize`/`:vertical resize`, `CTRL-W` command matrix, `:wincmd`."
+  },
+  {
+   "id": "WIN-05",
+   "area": "WIN",
+   "area_name": "Windows and layout",
+   "title": "Window focus, movement and constraints",
+   "phase": "P1",
+   "complexity": "M",
+   "deps": [
+    "WIN-01"
+   ],
+   "scope": "`CTRL-W h/j/k/l/w/W/t/b/p`, `:wincmd`, `'winminheight'`/`'winminwidth'`, focus follows close, alternate window, `WinEnter`/`WinLeave`."
+  },
+  {
+   "id": "WIN-06",
+   "area": "WIN",
+   "area_name": "Windows and layout",
+   "title": "Preview window",
+   "phase": "P2",
+   "complexity": "M",
+   "deps": [
+    "WIN-01",
+    "TAG-02"
+   ],
+   "scope": "`:pedit`/`:pclose`/`:ppop`, `'previewheight'`, one preview per tab, tag/help preview integration, `CTRL-W z`."
+  },
+  {
+   "id": "WIN-07",
+   "area": "WIN",
+   "area_name": "Windows and layout",
+   "title": "Window IDs and scripting APIs",
+   "phase": "P2",
+   "complexity": "M",
+   "deps": [
+    "WIN-01",
+    "VIML-15"
+   ],
+   "scope": "`win_getid()`/`win_id2win()`/`win_findbuf()`/`winlayout()`/`win_execute()`/`winrestcmd()`, stable IDs across reordering."
+  },
+  {
+   "id": "WIN-08",
+   "area": "WIN",
+   "area_name": "Windows and layout",
+   "title": "Scrolling options and synchronized views",
+   "phase": "P2",
+   "complexity": "L",
+   "deps": [
+    "WIN-02",
+    "OPT-03"
+   ],
+   "scope": "`'scroll'`, `'scrolloff'`/`'scrolloffpad'`/`'sidescrolloff'`, `'scrollbind'`/`'cursorbind'`/`'scrollopt'`, `CTRL-E/Y/D/U/F/B`, `zz/zt/zb`, `'smoothscroll'`."
+  },
+  {
+   "id": "WIN-09",
+   "area": "WIN",
+   "area_name": "Windows and layout",
+   "title": "Window size constraints",
+   "phase": "P2",
+   "complexity": "M",
+   "deps": [
+    "WIN-01"
+   ],
+   "scope": "`'winfixheight'`/`'winfixwidth'`/`'winfixbuf'`, `'winheight'`/`'winwidth'`, `:resize` with counts, `win_move_separator()`/`win_move_statusline()`."
+  },
+  {
+   "id": "WIN-10",
+   "area": "WIN",
+   "area_name": "Windows and layout",
+   "title": "Window decorations and separators",
+   "phase": "P1",
+   "complexity": "L",
+   "deps": [
+    "WIN-02"
+   ],
+   "scope": "Window separators, statusline rows (height supplied by the statusline widget), border/click regions, correct width accounting, resize repaint; gutters are DSP-10."
+  },
+  {
+   "id": "WIN-11",
+   "area": "WIN",
+   "area_name": "Windows and layout",
+   "title": "Mouse separator and statusline drag",
+   "phase": "P3",
+   "complexity": "M",
+   "deps": [
+    "WIN-01",
+    "UI-04"
+   ],
+   "scope": "Hit regions on separators/statusline, drag resize, double-click equalize, `'mouse'` gating, no UI-specific geometry in the model."
+  },
+  {
+   "id": "WIN-12",
+   "area": "WIN",
+   "area_name": "Windows and layout",
+   "title": "Global statusline and `'laststatus'`",
+   "phase": "P1",
+   "complexity": "S",
+   "deps": [
+    "WIN-01",
+    "STA-01"
+   ],
+   "scope": "`'laststatus'` 0/1/2/3, global statusline, statusline cache invalidation on window/buffer changes."
+  },
+  {
+   "id": "TAB-01",
+   "area": "TAB",
+   "area_name": "Tab pages",
+   "title": "Tab-page model",
+   "phase": "P1",
+   "complexity": "M",
+   "deps": [
+    "WIN-01"
+   ],
+   "scope": "Ordered tab pages, each with a window tree and current window; tab-local variables/options; closing the last window closes the tab."
+  },
+  {
+   "id": "TAB-02",
+   "area": "TAB",
+   "area_name": "Tab pages",
+   "title": "Tab commands and navigation",
+   "phase": "P1",
+   "complexity": "M",
+   "deps": [
+    "TAB-01",
+    "EX-01"
+   ],
+   "scope": "`:tabnew`/`:tabedit`/`:tabclose`/`:tabonly`/`:tabmove`/`:tabnext`/`:tabprevious`/`:tabfirst`/`:tablast`, `gt`/`gT`/`<C-PageUp>`, counts."
+  },
+  {
+   "id": "TAB-03",
+   "area": "TAB",
+   "area_name": "Tab pages",
+   "title": "`'showtabline'` and tabline integration",
+   "phase": "P1",
+   "complexity": "M",
+   "deps": [
+    "TAB-01",
+    "STA-05"
+   ],
+   "scope": "0/1/2 modes, tabline row ownership, minimum one tab, resize interaction, tabline hidden when appropriate."
+  },
+  {
+   "id": "TAB-04",
+   "area": "TAB",
+   "area_name": "Tab pages",
+   "title": "Tab-local scope and APIs",
+   "phase": "P2",
+   "complexity": "S",
+   "deps": [
+    "TAB-01",
+    "OPT-03"
+   ],
+   "scope": "`t:` variables, tab options, `gettabvar()`/`settabvar()`, `gettabinfo()`, `tabpagenr()`/`tabpagebuflist()`/`tabpagewinnr()`."
+  },
+  {
+   "id": "TAB-05",
+   "area": "TAB",
+   "area_name": "Tab pages",
+   "title": "`'tabline'` expression and clicks",
+   "phase": "P2",
+   "complexity": "M",
+   "deps": [
+    "TAB-03",
+    "STA-06"
+   ],
+   "scope": "Evaluate `'tabline'`, `%1T` clickable labels, close buttons `%X`, highlighting, `'guitablabel'`/`'guitabtooltip'` stored for future GUI."
+  },
+  {
+   "id": "TAB-06",
+   "area": "TAB",
+   "area_name": "Tab pages",
+   "title": "Tab lifecycle events and IDs",
+   "phase": "P2",
+   "complexity": "M",
+   "deps": [
+    "TAB-01",
+    "AUC-01"
+   ],
+   "scope": "Stable tabpage IDs, `TabNew`/`TabEnter`/`TabLeave`/`TabClosed`, `:tabclose` with modified buffers, `:tabonly` confirmation."
+  },
+  {
+   "id": "TAB-07",
+   "area": "TAB",
+   "area_name": "Tab pages",
+   "title": "Session and tab restoration",
+   "phase": "P2",
+   "complexity": "S",
+   "deps": [
+    "TAB-01",
+    "BUF-14"
+   ],
+   "scope": "`:mksession` tab order, current tab, per-tab window layout, tab-local options and working directories."
+  },
+  {
+   "id": "TAB-08",
+   "area": "TAB",
+   "area_name": "Tab pages",
+   "title": "Tabpanel sidebar and API",
+   "phase": "P3",
+   "complexity": "M",
+   "deps": [
+    "TAB-01",
+    "STA-05",
+    "STA-06",
+    "VIML-14"
+   ],
+   "scope": "`'showtabpanel'` 0/1/2, `'tabpanel'`/`'tabpanelopt'` (`columns`, `align`, `vert`, `scrollbar`), vertical sidebar layout, `TabPanel`/`TabPanelSel`/`TabPanelFill`, wheel/drag scrolling, `tabpanel_getinfo()`/`tabpanel_scroll()`, `:redrawtabpanel`, backend-neutral cells and hit regions."
+  },
+  {
+   "id": "UI-01",
+   "area": "UI",
+   "area_name": "UI protocol, compositor and TUI",
+   "title": "Cell, grid, frame and attribute model",
+   "phase": "P0",
+   "complexity": "M",
+   "deps": [
+    "FND-02"
+   ],
+   "scope": "Backend-neutral `Frame` with grids, `Cell` (grapheme cluster + attr id), `Attr` (fg/bg/sp, bold, italic, underline/curl/double/dotted/dashed, strike, reverse, blink, conceal), cursor and metadata."
+  },
+  {
+   "id": "UI-02",
+   "area": "UI",
+   "area_name": "UI protocol, compositor and TUI",
+   "title": "`UiBackend` trait and capabilities",
+   "phase": "P0",
+   "complexity": "M",
+   "deps": [
+    "UI-01"
+   ],
+   "scope": "Lifecycle trait: init, present, poll event, resize, title, clipboard, suspend/resume, shutdown; capability negotiation for color depth, mouse, paste, focus, kitty keyboard, synchronized output, in-band resize, IME, pixel metrics and images."
+  },
+  {
+   "id": "UI-03",
+   "area": "UI",
+   "area_name": "UI protocol, compositor and TUI",
+   "title": "Compositor",
+   "phase": "P0",
+   "complexity": "L",
+   "deps": [
+    "UI-01"
+   ],
+   "scope": "Layer stack (base, popups, external overlays), z-order, clipping, dirty rectangles/rows, cursor occlusion, frame sequence numbers and diff-friendly output."
+  },
+  {
+   "id": "UI-04",
+   "area": "UI",
+   "area_name": "UI protocol, compositor and TUI",
+   "title": "Hit regions and mouse routing",
+   "phase": "P0",
+   "complexity": "M",
+   "deps": [
+    "UI-01"
+   ],
+   "scope": "Core registers clickable/draggable regions with semantic `ActionId` (window border, statusline item, tab, sign, fold, popup item); backends send coordinates only."
+  },
+  {
+   "id": "UI-05",
+   "area": "UI",
+   "area_name": "UI protocol, compositor and TUI",
+   "title": "TUI backend",
+   "phase": "P0",
+   "complexity": "L",
+   "deps": [
+    "UI-02",
+    "FND-07"
+   ],
+   "scope": "Raw mode, alternate screen, terminfo/termcap lookup, `SIGWINCH` resize, `'termresize'` in-band resize, `'termsync'` synchronized output, title, bell, cursor shape, panic-safe terminal restore, `:set t_*` bridge."
+  },
+  {
+   "id": "UI-06",
+   "area": "UI",
+   "area_name": "UI protocol, compositor and TUI",
+   "title": "TTY input decoding",
+   "phase": "P0",
+   "complexity": "L",
+   "deps": [
+    "UI-02",
+    "FND-07"
+   ],
+   "scope": "Function/arrow keys, modifiers, xterm/SGR/urxvt/X10 mouse, bracketed paste, focus events, `modifyOtherKeys` and kitty keyboard protocol; documented ESC/Alt ambiguity policy tied to `'ttimeoutlen'`."
+  },
+  {
+   "id": "UI-07",
+   "area": "UI",
+   "area_name": "UI protocol, compositor and TUI",
+   "title": "Color negotiation and fallback",
+   "phase": "P1",
+   "complexity": "M",
+   "deps": [
+    "UI-02",
+    "SYN-02"
+   ],
+   "scope": "Mono/16/256/truecolor, `t_Co`, `'termguicolors'`, nearest-color mapping for cterm, GUI truecolor path, stable `AttrId` palette per frame."
+  },
+  {
+   "id": "UI-08",
+   "area": "UI",
+   "area_name": "UI protocol, compositor and TUI",
+   "title": "Cursor, focus and paste events",
+   "phase": "P1",
+   "complexity": "M",
+   "deps": [
+    "UI-06"
+   ],
+   "scope": "Cursor style per mode, blink policy, focus in/out, bracketed-paste payloads, `'paste'` handoff, kitty key release/repeat filtering."
+  },
+  {
+   "id": "UI-09",
+   "area": "UI",
+   "area_name": "UI protocol, compositor and TUI",
+   "title": "Suspend, resume and signals",
+   "phase": "P1",
+   "complexity": "M",
+   "deps": [
+    "UI-05",
+    "FND-07"
+   ],
+   "scope": "`SIGTSTP`/`SIGCONT`/`SIGINT`/`SIGTERM`, `:stop`/`:suspend`, terminal state save/restore around shell commands, `VimSuspend`/`VimResume`."
+  },
+  {
+   "id": "UI-10",
+   "area": "UI",
+   "area_name": "UI protocol, compositor and TUI",
+   "title": "Clipboard providers",
+   "phase": "P1",
+   "complexity": "M",
+   "deps": [
+    "FND-07"
+   ],
+   "scope": "macOS `pbcopy/pbpaste`, Wayland `wl-copy/wl-paste`, X11 `xclip/xsel`, optional OSC 52; core owns `'clipboard'`/registers, provider only moves bytes."
+  },
+  {
+   "id": "UI-11",
+   "area": "UI",
+   "area_name": "UI protocol, compositor and TUI",
+   "title": "GUI extension contract",
+   "phase": "P2",
+   "complexity": "S",
+   "deps": [
+    "UI-02"
+   ],
+   "scope": "Documented optional traits for pixel metrics, IME preedit, native menus, scrollbars, tab drag, fonts/ligatures and decorations. No GUI implementation in this project phase."
+  },
+  {
+   "id": "UI-12",
+   "area": "UI",
+   "area_name": "UI protocol, compositor and TUI",
+   "title": "Headless snapshot backend",
+   "phase": "P0",
+   "complexity": "S",
+   "deps": [
+    "UI-02"
+   ],
+   "scope": "Deterministic 80x24 (configurable) cell dump, JSON snapshots, `screenchar()`-style inspection, diffable frames for CI."
+  },
+  {
+   "id": "UI-13",
+   "area": "UI",
+   "area_name": "UI protocol, compositor and TUI",
+   "title": "Screen introspection functions",
+   "phase": "P2",
+   "complexity": "M",
+   "deps": [
+    "UI-01",
+    "VIML-14"
+   ],
+   "scope": "`screenchar()`/`screenchars()`/`screenstring()`/`screenpos()`/`screenattr()`/`screencol()`/`screenrow()`/`getbgcolor()`, cell-width aware."
+  },
+  {
+   "id": "UI-14",
+   "area": "UI",
+   "area_name": "UI protocol, compositor and TUI",
+   "title": "Redraw control",
+   "phase": "P1",
+   "complexity": "M",
+   "deps": [
+    "UI-03"
+   ],
+   "scope": "`:redraw`/`:redraw!`, `'lazyredraw'`, `'redrawtime'`, partial updates, message/flush ordering, no flicker on large frames."
+  },
+  {
+   "id": "UI-15",
+   "area": "UI",
+   "area_name": "UI protocol, compositor and TUI",
+   "title": "Redraw listeners",
+   "phase": "P3",
+   "complexity": "S",
+   "deps": [
+    "UI-03",
+    "VIML-05"
+   ],
+   "scope": "`redraw_listener_add()`/`redraw_listener_remove()`, `on_start`/`on_end` Funcref callbacks, listener IDs, main-thread ordering, sandbox and reentrancy errors, callbacks cannot trigger recursive redraw."
+  },
+  {
+   "id": "STA-01",
+   "area": "STA",
+   "area_name": "Statusline and tabline widgets",
+   "title": "Statusline layout engine",
+   "phase": "P0",
+   "complexity": "M",
+   "deps": [
+    "UI-01",
+    "WIN-01"
+   ],
+   "scope": "Left/center/right groups (`%=`), truncation (`%<`), minimum widths, highlight run merging, wide-character width, click region capture."
+  },
+  {
+   "id": "STA-02",
+   "area": "STA",
+   "area_name": "Statusline and tabline widgets",
+   "title": "Statusline item expansion",
+   "phase": "P1",
+   "complexity": "M",
+   "deps": [
+    "STA-01",
+    "VIML-11"
+   ],
+   "scope": "`%f %F %t %m %M %r %R %h %H %w %W %y %Y %l %L %c %C %v %V %o %O %p %P %a %{...} %#hl# %1* %0* %= %< %%%`, `%[FuncName]`/`%[]` click regions, `%@` newline and modifier flags."
+  },
+  {
+   "id": "STA-03",
+   "area": "STA",
+   "area_name": "Statusline and tabline widgets",
+   "title": "Statusline expression evaluation and caching",
+   "phase": "P1",
+   "complexity": "M",
+   "deps": [
+    "STA-02",
+    "SYN-01"
+   ],
+   "scope": "Evaluate `'statusline'` per window with `g:statusline_winid`, sandbox errors into messages, cache by buffer/window/changedtick, invalidate on relevant events."
+  },
+  {
+   "id": "STA-04",
+   "area": "STA",
+   "area_name": "Statusline and tabline widgets",
+   "title": "Mode, ruler and command feedback",
+   "phase": "P1",
+   "complexity": "M",
+   "deps": [
+    "STA-01",
+    "OPT-03"
+   ],
+   "scope": "`'laststatus'`, `'ruler'`/`'rulerformat'`, `'showcmd'`/`'showcmdloc'`, `'showmode'`, `'shortmess'`, counts, pending operator display and `CTRL-G` file info."
+  },
+  {
+   "id": "STA-05",
+   "area": "STA",
+   "area_name": "Statusline and tabline widgets",
+   "title": "Tabline layout and items",
+   "phase": "P1",
+   "complexity": "M",
+   "deps": [
+    "TAB-01",
+    "UI-01"
+   ],
+   "scope": "Default tab labels, tab numbers, modified marker, `%1T` clickable tabs, `%X` close, `%#HL#`, `%{...}`, alignment/truncation, `'showtabline'`."
+  },
+  {
+   "id": "STA-06",
+   "area": "STA",
+   "area_name": "Statusline and tabline widgets",
+   "title": "Statusline and tabline click actions",
+   "phase": "P2",
+   "complexity": "M",
+   "deps": [
+    "STA-01",
+    "UI-04"
+   ],
+   "scope": "Mouse press/double-click/wheel on statusline and tabline, semantic actions (focus window, close tab, scroll), `%[Func]` callback dispatch with `minwid`/`nclicks`/`button`/`mods`/`winid`/`area`/`tabnr`, `has('statusline_click')`, drag separation deferred to WIN-11."
+  },
+  {
+   "id": "STA-07",
+   "area": "STA",
+   "area_name": "Statusline and tabline widgets",
+   "title": "GUI tabline hooks",
+   "phase": "P3",
+   "complexity": "S",
+   "deps": [
+    "UI-11",
+    "STA-05"
+   ],
+   "scope": "Metadata for native tab bars/tooltips/close buttons and drag reorder; design-only until a GUI backend exists."
+  },
+  {
+   "id": "STA-08",
+   "area": "STA",
+   "area_name": "Statusline and tabline widgets",
+   "title": "Multi-line statusline",
+   "phase": "P3",
+   "complexity": "M",
+   "deps": [
+    "STA-01",
+    "WIN-10"
+   ],
+   "scope": "`'statuslineopt'` `fixedheight`/`maxheight:N`, `%@` newlines, per-window statusline height, global-local option semantics, layout/cache/hit-region updates, interaction with `'laststatus'` and window resize."
+  },
+  {
+   "id": "CMD-01",
+   "area": "CMD",
+   "area_name": "Command line",
+   "title": "Command-line state machine and editor",
+   "phase": "P0",
+   "complexity": "L",
+   "deps": [
+    "UI-01",
+    "EX-01"
+   ],
+   "scope": "`:`, `/`, `?` and `=` prompts; insert/overwrite, cursor motions, word/line kill, `<C-r>`, `<C-v>`, digraphs, `<C-f>`/`<C-b>`, history recall, prompt type."
+  },
+  {
+   "id": "CMD-02",
+   "area": "CMD",
+   "area_name": "Command line",
+   "title": "Command-line history",
+   "phase": "P1",
+   "complexity": "M",
+   "deps": [
+    "CMD-01"
+   ],
+   "scope": "`'history'`, `:history`, `histadd()`/`histdel()`/`histget()`/`histnr()`, `@:` and `@@`, search history, duplicate suppression, persistence via BUF-15."
+  },
+  {
+   "id": "CMD-03",
+   "area": "CMD",
+   "area_name": "Command line",
+   "title": "Command-line completion engine",
+   "phase": "P1",
+   "complexity": "L",
+   "deps": [
+    "CMD-01",
+    "BUF-02"
+   ],
+   "scope": "Context detection and all completion types: commands, files/dirs, buffers, tags, options, functions, variables, mappings, autocmds, highlights, syntax, compiler, environment; `getcompletion()`."
+  },
+  {
+   "id": "CMD-04",
+   "area": "CMD",
+   "area_name": "Command line",
+   "title": "Wildmenu and popup completion",
+   "phase": "P1",
+   "complexity": "M",
+   "deps": [
+    "CMD-03",
+    "UI-01"
+   ],
+   "scope": "`'wildmenu'`, `'wildmode'`, `'wildoptions'` (fuzzy, pum, tagfile), `'pumheight'`/`'pumwidth'`, `'pumopt'`/`'pumborder'` borders, match highlighting, `wildmenumode()`, cancel semantics."
+  },
+  {
+   "id": "CMD-05",
+   "area": "CMD",
+   "area_name": "Command line",
+   "title": "Command-line window",
+   "phase": "P1",
+   "complexity": "M",
+   "deps": [
+    "CMD-01",
+    "BUF-09",
+    "WIN-01"
+   ],
+   "scope": "`q:`/`q/`/`q?`, `'cedit'`, `'cmdwinheight'`, execute on `<CR>`, cancel on `<C-c>`, editable history, `getcmdwintype()`."
+  },
+  {
+   "id": "CMD-06",
+   "area": "CMD",
+   "area_name": "Command line",
+   "title": "Prompt functions and raw input",
+   "phase": "P1",
+   "complexity": "M",
+   "deps": [
+    "CMD-01",
+    "MSG-01"
+   ],
+   "scope": "`input()`/`inputlist()`/`inputsecret()`/`confirm()`, `getchar()`/`getcharstr()`/`getcharmod()`, mouse in prompts, cancel/timeout return values."
+  },
+  {
+   "id": "CMD-07",
+   "area": "CMD",
+   "area_name": "Command line",
+   "title": "Search prompt and incremental search",
+   "phase": "P1",
+   "complexity": "M",
+   "deps": [
+    "CMD-01",
+    "REGEX-01"
+   ],
+   "scope": "`'incsearch'`, `'hlsearch'`, search offsets, `<C-g>/<C-t>`, cancel restores view, `v:searchforward`, pattern delimiter and escaping."
+  },
+  {
+   "id": "MSG-01",
+   "area": "MSG",
+   "area_name": "Messages, errors and prompts",
+   "title": "Message pipeline",
+   "phase": "P0",
+   "complexity": "M",
+   "deps": [
+    "UI-01",
+    "FND-04"
+   ],
+   "scope": "`:echo`/`:echon`/`:echomsg`/`:echoerr`/`:echowindow`, message kinds and highlight groups, `v:statusmsg`/`v:errmsg`, expression-list echo, no message truncation of data."
+  },
+  {
+   "id": "MSG-02",
+   "area": "MSG",
+   "area_name": "Messages, errors and prompts",
+   "title": "Hit-enter and message history",
+   "phase": "P1",
+   "complexity": "M",
+   "deps": [
+    "MSG-01"
+   ],
+   "scope": "`'more'`, hit-enter prompt, `:messages` window, message ring buffer, `'cmdheight'`=0 behaviour and scrollback."
+  },
+  {
+   "id": "MSG-03",
+   "area": "MSG",
+   "area_name": "Messages, errors and prompts",
+   "title": "Capturing output",
+   "phase": "P1",
+   "complexity": "M",
+   "deps": [
+    "MSG-01",
+    "EX-01"
+   ],
+   "scope": "`:redir` to variable/file/register, `execute()` capture, `:silent`/`:silent!`/`:unsilent`, `:filter`, ordering with nested commands."
+  },
+  {
+   "id": "MSG-04",
+   "area": "MSG",
+   "area_name": "Messages, errors and prompts",
+   "title": "Error formatting and throwpoints",
+   "phase": "P1",
+   "complexity": "M",
+   "deps": [
+    "MSG-01",
+    "FND-02"
+   ],
+   "scope": "E-code registry, `v:errmsg`/`v:exception`/`v:throwpoint`, source/line context, `:verbose` suffix, translation lookup, `:silent!` suppression."
+  },
+  {
+   "id": "MSG-05",
+   "area": "MSG",
+   "area_name": "Messages, errors and prompts",
+   "title": "Intro, version and help output",
+   "phase": "P1",
+   "complexity": "S",
+   "deps": [
+    "MSG-01"
+   ],
+   "scope": "`:intro`, `:version`, `--version`, feature matrix, startup screen, `'shortmess'` flags, `:help`-less usage."
+  },
+  {
+   "id": "MSG-06",
+   "area": "MSG",
+   "area_name": "Messages, errors and prompts",
+   "title": "Dialogs and waits",
+   "phase": "P2",
+   "complexity": "S",
+   "deps": [
+    "MSG-01",
+    "CMD-06"
+   ],
+   "scope": "`:confirm`, `:browse` fallback, `:sleep` with interrupt, `confirm()` choices, dialog text without GUI dependency."
+  },
+  {
+   "id": "EDT-01",
+   "area": "EDT",
+   "area_name": "Editing core",
+   "title": "Normal-mode dispatch and counts",
+   "phase": "P0",
+   "complexity": "L",
+   "deps": [
+    "FND-03"
+   ],
+   "scope": "Mode stack, counts, register prefix, operator-pending state, `v:count`/`v:count1`, ambiguous key resolution, error/beep policy, `<Esc>` cancellation."
+  },
+  {
+   "id": "EDT-02",
+   "area": "EDT",
+   "area_name": "Editing core",
+   "title": "Basic cursor motions",
+   "phase": "P0",
+   "complexity": "M",
+   "deps": [
+    "EDT-01",
+    "BUF-01"
+   ],
+   "scope": "`h j k l`, arrows, `<Space>`, `<BS>`, `+ - _ <CR>`, cursor clamping, counts, `'startofline'` interplay."
+  },
+  {
+   "id": "EDT-03",
+   "area": "EDT",
+   "area_name": "Editing core",
+   "title": "Word and WORD motions",
+   "phase": "P1",
+   "complexity": "M",
+   "deps": [
+    "EDT-02",
+    "ENC-04"
+   ],
+   "scope": "`w W b B e E ge gE` with `'iskeyword'`, counts, end-of-line crossing rules, multibyte correctness."
+  },
+  {
+   "id": "EDT-04",
+   "area": "EDT",
+   "area_name": "Editing core",
+   "title": "Line and column motions",
+   "phase": "P1",
+   "complexity": "S",
+   "deps": [
+    "EDT-02"
+   ],
+   "scope": "`0 ^ $ g_`, bar motion, `Home/End`, `g0/g^/g$/gm`, `gj/gk`, `'startofline'`, virtual columns and `curswant`."
+  },
+  {
+   "id": "EDT-05",
+   "area": "EDT",
+   "area_name": "Editing core",
+   "title": "Paragraph, sentence, section and bracket motions",
+   "phase": "P1",
+   "complexity": "M",
+   "deps": [
+    "EDT-02",
+    "ENC-04"
+   ],
+   "scope": "`{ } ( ) [[ ]] [] ][ [{ ]} [( ])`, `%` and `'matchpairs'`, `'paragraphs'`/`'sections'`, comments and preprocessor blocks."
+  },
+  {
+   "id": "EDT-06",
+   "area": "EDT",
+   "area_name": "Editing core",
+   "title": "Character search motions",
+   "phase": "P1",
+   "complexity": "S",
+   "deps": [
+    "EDT-02"
+   ],
+   "scope": "`f F t T ; ,`, counts, `'ignorecase'`? (char search is exact), repeat direction, multibyte character boundaries."
+  },
+  {
+   "id": "EDT-07",
+   "area": "EDT",
+   "area_name": "Editing core",
+   "title": "Search motions",
+   "phase": "P1",
+   "complexity": "L",
+   "deps": [
+    "EDT-02",
+    "REGEX-01",
+    "CMD-07"
+   ],
+   "scope": "`/ ? n N * # g* g#`, `gn/gN`, `'wrapscan'`/`'ignorecase'`/`'smartcase'`, `'incsearch'`/`'hlsearch'`, search offsets, `v:searchforward`."
+  },
+  {
+   "id": "EDT-08",
+   "area": "EDT",
+   "area_name": "Editing core",
+   "title": "Marks, jumps and change positions",
+   "phase": "P1",
+   "complexity": "M",
+   "deps": [
+    "EDT-02",
+    "BUF-07"
+   ],
+   "scope": "Apostrophe and backtick mark motions, `[ ] < >` marks, `<C-o>/<C-i>`, `g;`/`g,`, `:jumps`/`:changes`/`:marks`, jump vs change list semantics."
+  },
+  {
+   "id": "EDT-09",
+   "area": "EDT",
+   "area_name": "Editing core",
+   "title": "Screen motions and scrolling keys",
+   "phase": "P1",
+   "complexity": "M",
+   "deps": [
+    "EDT-02",
+    "WIN-02"
+   ],
+   "scope": "`H M L`, `<C-e>/<C-y>`, `<C-d>/<C-u>`, `<C-f>/<C-b>`, `zz/zt/zb/z./z-/z+`, `'scroll'` and cursor keep."
+  },
+  {
+   "id": "EDT-10",
+   "area": "EDT",
+   "area_name": "Editing core",
+   "title": "Operator engine",
+   "phase": "P1",
+   "complexity": "L",
+   "deps": [
+    "EDT-01",
+    "UND-01"
+   ],
+   "scope": "`d c y < > = ! gq gw g~ gu gU g? zf g@`, motion/text-object composition, counts, linewise/charwise/blockwise, register selection, abort/undo block."
+  },
+  {
+   "id": "EDT-11",
+   "area": "EDT",
+   "area_name": "Editing core",
+   "title": "Text objects",
+   "phase": "P1",
+   "complexity": "L",
+   "deps": [
+    "EDT-10",
+    "ENC-04"
+   ],
+   "scope": "`iw aw iW aW is as ip ap i( a( i[ a[ i{ a{ i< a< it at i` `a` `i'` `a'` `i\"` `a\"`, `ib/ab/iB/aB`, nesting, whitespace rules, block virtual edit."
+  },
+  {
+   "id": "EDT-12",
+   "area": "EDT",
+   "area_name": "Editing core",
+   "title": "Registers, yank and put",
+   "phase": "P1",
+   "complexity": "L",
+   "deps": [
+    "EDT-10",
+    "UI-10"
+   ],
+   "scope": "Unnamed, `0-9`, `a-z/A-Z`, `-`, `\"`, `.`, `:`, `%`, `#`, `=`, `_`; `p/P/gp/gP/]p/[p`, `:put`/`:yank`, `getreg()`/`setreg()`/`getreginfo()`, `TextPutPre`/`TextPutPost` with `v:event`, `'clipboard'`."
+  },
+  {
+   "id": "EDT-13",
+   "area": "EDT",
+   "area_name": "Editing core",
+   "title": "Join and split lines",
+   "phase": "P1",
+   "complexity": "S",
+   "deps": [
+    "EDT-10",
+    "INS-01"
+   ],
+   "scope": "`J`/`gJ`, `:join` with ranges, `'joinspaces'`, insert-mode newline, line splitting at cursor with indent preservation."
+  },
+  {
+   "id": "EDT-14",
+   "area": "EDT",
+   "area_name": "Editing core",
+   "title": "Replace and virtual replace",
+   "phase": "P1",
+   "complexity": "M",
+   "deps": [
+    "EDT-01"
+   ],
+   "scope": "`R`, `gR`, replace stack/backspace restore, `'revins'` deferred with RTL, virtual replace at tab/wide-char boundaries."
+  },
+  {
+   "id": "EDT-15",
+   "area": "EDT",
+   "area_name": "Editing core",
+   "title": "Visual modes",
+   "phase": "P1",
+   "complexity": "L",
+   "deps": [
+    "EDT-01",
+    "WIN-02"
+   ],
+   "scope": "`v/V/<C-v>`, `o/O` swap ends, `gv`, `:visual`, `'selection'`, blockwise virtual corners, visual marks `'<`/`'>`, mode messages."
+  },
+  {
+   "id": "EDT-16",
+   "area": "EDT",
+   "area_name": "Editing core",
+   "title": "Select mode and mouse selection",
+   "phase": "P2",
+   "complexity": "M",
+   "deps": [
+    "EDT-15",
+    "UI-04"
+   ],
+   "scope": "`'selectmode'`, `'keymodel'`, select-mode entry keys, mouse drag, shift-selection, typing replaces selection."
+  },
+  {
+   "id": "EDT-17",
+   "area": "EDT",
+   "area_name": "Editing core",
+   "title": "Dot repeat and redo register",
+   "phase": "P1",
+   "complexity": "M",
+   "deps": [
+    "EDT-10"
+   ],
+   "scope": "`.` with counts, insert replay, operator replay, `\".` register, `'report'`, changes that do not set dot, undo interaction."
+  },
+  {
+   "id": "EDT-18",
+   "area": "EDT",
+   "area_name": "Editing core",
+   "title": "Macros and `:normal`",
+   "phase": "P1",
+   "complexity": "M",
+   "deps": [
+    "EDT-01",
+    "EX-06"
+   ],
+   "scope": "`q{reg}`, `@{reg}`/`@@`, counts, recursive macro abort, `:normal[!]` over ranges, register pollution rules, `q:` integration."
+  },
+  {
+   "id": "EDT-19",
+   "area": "EDT",
+   "area_name": "Editing core",
+   "title": "Increment and decrement",
+   "phase": "P1",
+   "complexity": "S",
+   "deps": [
+    "EDT-02"
+   ],
+   "scope": "`<C-a>/<C-x>`, `g<C-a>/g<C-x>` in Visual mode, `'nrformats'` (binary/octal/hex/alpha), leading zeros, overflow."
+  },
+  {
+   "id": "EDT-20",
+   "area": "EDT",
+   "area_name": "Editing core",
+   "title": "Case, shift, format and indent operators",
+   "phase": "P1",
+   "complexity": "L",
+   "deps": [
+    "EDT-10",
+    "INS-07"
+   ],
+   "scope": "`~ g~ gu gU g?`, `>> <<`, `=`/`==`, `gq/gw`, `'formatoptions'`, `'textwidth'`, `'shiftwidth'`/`'expandtab'`/`'shiftround'`."
+  },
+  {
+   "id": "EDT-21",
+   "area": "EDT",
+   "area_name": "Editing core",
+   "title": "Virtual editing and wrap keys",
+   "phase": "P2",
+   "complexity": "M",
+   "deps": [
+    "EDT-02",
+    "OPT-03"
+   ],
+   "scope": "`'virtualedit'` (all/block/insert/onemore), `'whichwrap'`, `'keymodel'`, `'selection'`, cursor beyond EOL, tab/wide-char columns."
+  },
+  {
+   "id": "EDT-22",
+   "area": "EDT",
+   "area_name": "Editing core",
+   "title": "Change list",
+   "phase": "P2",
+   "complexity": "S",
+   "deps": [
+    "EDT-08",
+    "BUF-07"
+   ],
+   "scope": "`g;`/`g,`, `:changes`, change number preservation across edits, `getchangelist()`."
+  },
+  {
+   "id": "EDT-23",
+   "area": "EDT",
+   "area_name": "Editing core",
+   "title": "Paste mode and bracketed paste",
+   "phase": "P1",
+   "complexity": "S",
+   "deps": [
+    "EDT-01",
+    "UI-06"
+   ],
+   "scope": "`'paste'`, `:set paste`, bracket-paste insertion without mappings/abbreviations/autoindent, paste register behaviour."
+  },
+  {
+   "id": "EDT-24",
+   "area": "EDT",
+   "area_name": "Editing core",
+   "title": "Custom operator `g@`",
+   "phase": "P2",
+   "complexity": "M",
+   "deps": [
+    "EDT-10",
+    "VIML-16"
+   ],
+   "scope": "`g@{motion}`, `'operatorfunc'`, `'[`/`']` marks, visual `g@`, errors and return to Normal mode."
+  },
+  {
+   "id": "EDT-25",
+   "area": "EDT",
+   "area_name": "Editing core",
+   "title": "Count display `g<C-g>`",
+   "phase": "P2",
+   "complexity": "S",
+   "deps": [
+    "EDT-15"
+   ],
+   "scope": "Selected lines/words/chars/bytes, visual block dimensions, Vim-compatible message."
+  },
+  {
+   "id": "INS-01",
+   "area": "INS",
+   "area_name": "Insert and replace modes",
+   "title": "Insert, append and open-line",
+   "phase": "P0",
+   "complexity": "M",
+   "deps": [
+    "EDT-01"
+   ],
+   "scope": "`i I a A o O gi gI`, insert position restoration, counts, `'insertmode'` basics, mode message, undo block boundaries."
+  },
+  {
+   "id": "INS-02",
+   "area": "INS",
+   "area_name": "Insert and replace modes",
+   "title": "Insert-mode special keys",
+   "phase": "P1",
+   "complexity": "M",
+   "deps": [
+    "INS-01"
+   ],
+   "scope": "`<BS> <C-h> <C-w> <C-u> <C-t> <C-d> <C-e> <C-y> <C-r> <C-o> <C-v> <C-k> <C-@> <C-]>`, `'backspace'`, re-indent keys in `'cinkeys'`/`'indentkeys'`."
+  },
+  {
+   "id": "INS-03",
+   "area": "INS",
+   "area_name": "Insert and replace modes",
+   "title": "Digraphs",
+   "phase": "P1",
+   "complexity": "M",
+   "deps": [
+    "INS-01",
+    "ENC-01"
+   ],
+   "scope": "`<C-k>`, `'digraph'`, `:digraphs`, RFC 1345 table, `digraph_get()`/`digraph_set()`, insert and cmdline use."
+  },
+  {
+   "id": "INS-04",
+   "area": "INS",
+   "area_name": "Insert and replace modes",
+   "title": "Abbreviations",
+   "phase": "P1",
+   "complexity": "M",
+   "deps": [
+    "INS-01",
+    "EX-01"
+   ],
+   "scope": "`:abbreviate`/`:iabbrev`/`:cabbrev`, `<buffer>`, `<expr>`, prefixes `i`/`c`/`!`, `'paste'` bypass, expansion before/after cursor, `<C-]>`."
+  },
+  {
+   "id": "INS-05",
+   "area": "INS",
+   "area_name": "Insert and replace modes",
+   "title": "Insert completion sources",
+   "phase": "P2",
+   "complexity": "L",
+   "deps": [
+    "INS-01",
+    "CMD-03",
+    "TAG-01"
+   ],
+   "scope": "`<C-n>/<C-p>`, `'complete'` (`.`, `w`, `b`, `u`, `k`, `kspell`, `s`, `i`, `d`, `t`, `]`), `'completeopt'`, `'completefunc'`, `'omnifunc'`, `'thesaurusfunc'`, `'tagfunc'`, dictionary/thesaurus."
+  },
+  {
+   "id": "INS-06",
+   "area": "INS",
+   "area_name": "Insert and replace modes",
+   "title": "Completion popup and selection",
+   "phase": "P2",
+   "complexity": "L",
+   "deps": [
+    "INS-05",
+    "CMD-04"
+   ],
+   "scope": "Popup menu items, info preview, `<C-n>/<C-p>/<C-y>/<C-e>`, `'pumheight'`/`'pumwidth'`/`'pumblend'` (stored), `CompleteDone`, `v:completed_item`, `complete_info()`."
+  },
+  {
+   "id": "INS-07",
+   "area": "INS",
+   "area_name": "Insert and replace modes",
+   "title": "Indentation engines",
+   "phase": "P1",
+   "complexity": "XL",
+   "deps": [
+    "INS-01",
+    "REGEX-01"
+   ],
+   "scope": "`'autoindent'`, `'smartindent'`, `'cindent'` with `'cinoptions'`/`'cinkeys'`, `'lisp'`, `indent()`, `cindent()`, `shiftwidth()`; expression indentation is INS-12."
+  },
+  {
+   "id": "INS-12",
+   "area": "INS",
+   "area_name": "Insert and replace modes",
+   "title": "Expression indentation",
+   "phase": "P2",
+   "complexity": "M",
+   "deps": [
+    "INS-07",
+    "VIML-16"
+   ],
+   "scope": "`'indentexpr'`/`'indentkeys'` callbacks, `'formatexpr'` interaction, error containment, per-line caching, Vim-compatible `v:lnum`."
+  },
+  {
+   "id": "INS-08",
+   "area": "INS",
+   "area_name": "Insert and replace modes",
+   "title": "Format options and automatic wrapping",
+   "phase": "P2",
+   "complexity": "L",
+   "deps": [
+    "INS-01",
+    "OPT-03"
+   ],
+   "scope": "`'formatoptions'` (t c r o q a n 2 v b j), `'textwidth'`, `'wrapmargin'`, comment leaders `'comments'`/`'commentstring'`, `'formatlistpat'`."
+  },
+  {
+   "id": "INS-09",
+   "area": "INS",
+   "area_name": "Insert and replace modes",
+   "title": "Insert-mode mappings and paste",
+   "phase": "P1",
+   "complexity": "M",
+   "deps": [
+    "MAP-01",
+    "INS-01"
+   ],
+   "scope": "`:imap` family, `<buffer>`/`<expr>`/`<nowait>`, `'paste'`, bracket paste, `CTRL-O` one-shot Normal command, mapping failure/beep."
+  },
+  {
+   "id": "INS-10",
+   "area": "INS",
+   "area_name": "Insert and replace modes",
+   "title": "Start/stop insert and one-shot commands",
+   "phase": "P1",
+   "complexity": "S",
+   "deps": [
+    "INS-01"
+   ],
+   "scope": "`:startinsert`/`:stopinsert`, `gi`, `<C-o>`, insert-mode `<C-r>` register insertion, returning to Insert after command."
+  },
+  {
+   "id": "INS-11",
+   "area": "INS",
+   "area_name": "Insert and replace modes",
+   "title": "Repeat of insert changes",
+   "phase": "P1",
+   "complexity": "M",
+   "deps": [
+    "EDT-17",
+    "INS-01"
+   ],
+   "scope": "Dot-repeat of inserted text, `<C-a>` in insert (last inserted text), undo block grouping, replace-mode repeat."
+  },
+  {
+   "id": "VIS-01",
+   "area": "VIS",
+   "area_name": "Visual and Select modes",
+   "title": "Visual selection model",
+   "phase": "P1",
+   "complexity": "L",
+   "deps": [
+    "EDT-01"
+   ],
+   "scope": "Char/line/block modes, anchor and cursor, `o/O`, `gv`, `:visual`, per-window visual state, reselect after operator, `'selection'`."
+  },
+  {
+   "id": "VIS-02",
+   "area": "VIS",
+   "area_name": "Visual and Select modes",
+   "title": "Visual operators and block insert",
+   "phase": "P1",
+   "complexity": "L",
+   "deps": [
+    "VIS-01",
+    "EDT-10"
+   ],
+   "scope": "`d c y < > = ! gq gw g~ gu gU g? J p P r~ u U`, block `I A c $`, blockwise put, virtual block corners, `'virtualedit'`."
+  },
+  {
+   "id": "VIS-03",
+   "area": "VIS",
+   "area_name": "Visual and Select modes",
+   "title": "Visual marks and ex integration",
+   "phase": "P1",
+   "complexity": "M",
+   "deps": [
+    "VIS-01",
+    "EX-01"
+   ],
+   "scope": "`'<`/`'>`, `:'<,'>` ranges, visual `:normal`/`:!`/`:vimgrep`, `gv` after command, `'<`/`'>` update rules."
+  },
+  {
+   "id": "VIS-04",
+   "area": "VIS",
+   "area_name": "Visual and Select modes",
+   "title": "Select mode",
+   "phase": "P2",
+   "complexity": "M",
+   "deps": [
+    "VIS-01",
+    "UI-04"
+   ],
+   "scope": "`'selectmode'`, `'keymodel'`, typing replaces selection, mouse drag, shift-arrows, select-mode entry keys, mode messages."
+  },
+  {
+   "id": "VIS-05",
+   "area": "VIS",
+   "area_name": "Visual and Select modes",
+   "title": "Visual search and counts",
+   "phase": "P2",
+   "complexity": "S",
+   "deps": [
+    "VIS-01",
+    "EDT-07"
+   ],
+   "scope": "`*`/`#` in Visual mode, `gn/gN`, `g<C-g>` counts, `v:count`, selection-aware replace."
+  },
+  {
+   "id": "EX-01",
+   "area": "EX",
+   "area_name": "Ex command engine",
+   "title": "Ex parser, ranges and addresses",
+   "phase": "P0",
+   "complexity": "L",
+   "deps": [
+    "FND-04"
+   ],
+   "scope": "Command abbreviation resolution, ranges (`.`, `$`, `%`, marks, search offsets, `;`), counts, bang/register/args, comments, command separators, modifier prefixes."
+  },
+  {
+   "id": "EX-02",
+   "area": "EX",
+   "area_name": "Ex command engine",
+   "title": "Command dispatch and user commands",
+   "phase": "P1",
+   "complexity": "L",
+   "deps": [
+    "EX-01"
+   ],
+   "scope": "Built-in command table, `:command` attributes (`-nargs`, `-range`, `-count`, `-register`, `-bang`, `-bar`, `-buffer`, `-complete`, `-addr`, `-keepscript`), replacement placeholders `<args>`/`<q-args>`/`<f-args>`/`<line1>`/`<line2>`/`<count>`/`<reg>`/`<bang>`/`<mods>`."
+  },
+  {
+   "id": "EX-03",
+   "area": "EX",
+   "area_name": "Ex command engine",
+   "title": "`:global` and `:vglobal`",
+   "phase": "P1",
+   "complexity": "M",
+   "deps": [
+    "EX-01",
+    "REGEX-01"
+   ],
+   "scope": "Mark matching lines, nested command execution, `:g/pat/normal ...`, delete/append interaction, error continuation, recursion limits."
+  },
+  {
+   "id": "EX-04",
+   "area": "EX",
+   "area_name": "Ex command engine",
+   "title": "`:substitute`",
+   "phase": "P1",
+   "complexity": "L",
+   "deps": [
+    "EX-01",
+    "REGEX-01"
+   ],
+   "scope": "`:s`/`:sno`/`:smagic`/`:snomagic`, flags `g c e i I n p # l r`, count, `&`/`:&&`/`g&`, replacement `\\0-\\9`, `~`, `\\u \\U \\l \\L \\e \\E`, `\\=` expression, multiline."
+  },
+  {
+   "id": "EX-05",
+   "area": "EX",
+   "area_name": "Ex command engine",
+   "title": "Line and range commands",
+   "phase": "P1",
+   "complexity": "M",
+   "deps": [
+    "EX-01",
+    "EDT-12"
+   ],
+   "scope": "`:delete`/`:yank`/`:put`/`:join`/`:move`/`:copy`/`:t`/`:sort`/`:retab`/`:left`/`:right`/`:center`/`:z`/`:print`/`:number`/`:list`/`:undolist`."
+  },
+  {
+   "id": "EX-06",
+   "area": "EX",
+   "area_name": "Ex command engine",
+   "title": "`:normal` and `:execute`",
+   "phase": "P1",
+   "complexity": "M",
+   "deps": [
+    "EX-01",
+    "EDT-01"
+   ],
+   "scope": "`:normal[!]` with ranges and counts, `:execute` with expression lists and nested commands, `:eval`, error propagation and abort rules."
+  },
+  {
+   "id": "EX-07",
+   "area": "EX",
+   "area_name": "Ex command engine",
+   "title": "Multi-file and multi-window iteration",
+   "phase": "P2",
+   "complexity": "L",
+   "deps": [
+    "EX-02",
+    "BUF-10",
+    "WIN-04"
+   ],
+   "scope": "`:argdo`/`:bufdo`/`:windo`/`:tabdo`/`:cdo`/`:cfdo`/`:ldo`/`:lfdo`, abort on error, buffer/window switching and modified-buffer policy."
+  },
+  {
+   "id": "EX-08",
+   "area": "EX",
+   "area_name": "Ex command engine",
+   "title": "Shell and filter integration",
+   "phase": "P1",
+   "complexity": "L",
+   "deps": [
+    "FND-07",
+    "BUF-03"
+   ],
+   "scope": "`:!`, `:r !`, `:w !`, `:!!`, `:shell`, filter ranges, `'shell'`/`'shellcmdflag'`/`'shellquote'`/`'shellredir'`/`'shellxquote'`/`'shelltemp'`, exit status `v:shell_error`."
+  },
+  {
+   "id": "EX-09",
+   "area": "EX",
+   "area_name": "Ex command engine",
+   "title": "Command modifiers",
+   "phase": "P1",
+   "complexity": "M",
+   "deps": [
+    "EX-01"
+   ],
+   "scope": "`:silent`/`:silent!`/`:unsilent`, `:verbose`, `:noautocmd`, `:keepalt`, `:keepjumps`, `:keepmarks`, `:lockmarks`, `:keeppatterns`, `:sandbox`, `:tab`, `:vertical`, `:aboveleft`/`:belowright`/`:leftabove`/`:rightbelow`/`:topleft`/`:botright`, `:hide`, `:noswapfile`, `:confirm`, `:filter`."
+  },
+  {
+   "id": "EX-10",
+   "area": "EX",
+   "area_name": "Ex command engine",
+   "title": "Listing and introspection commands",
+   "phase": "P1",
+   "complexity": "M",
+   "deps": [
+    "EX-02"
+   ],
+   "scope": "`:ls`/`:buffers`/`:files`/`:args`/`:marks`/`:registers`/`:jumps`/`:changes`/`:map`/`:abbreviate`/`:autocmd`/`:highlight`/`:syntax`/`:scriptnames`/`:messages`/`:options`/`:command`/`:function`/`:set` with Vim-compatible text and redir capture."
+  },
+  {
+   "id": "EX-11",
+   "area": "EX",
+   "area_name": "Ex command engine",
+   "title": "Build, grep and cscope bridges",
+   "phase": "P2",
+   "complexity": "M",
+   "deps": [
+    "QF-05"
+   ],
+   "scope": "`:make`/`:grep`/`:vimgrep`/`:vimgrepadd`/`:cscope`/`:lmake`/`:lgrep`/`:lvimgrep`, `'makeprg'`/`'grepprg'`/`'errorformat'`, `:compiler` loading."
+  },
+  {
+   "id": "EX-12",
+   "area": "EX",
+   "area_name": "Ex command engine",
+   "title": "Menus",
+   "phase": "P3",
+   "complexity": "M",
+   "deps": [
+    "UI-04"
+   ],
+   "scope": "`:menu` family, `:emenu`, `:popup` menus? (popup is separate), priority/accelerators, mode-specific menus, `'wildmenu'` interaction, `menu_info()`."
+  },
+  {
+   "id": "EX-13",
+   "area": "EX",
+   "area_name": "Ex command engine",
+   "title": "Platform-specific Ex quirks",
+   "phase": "P4",
+   "complexity": "S",
+   "deps": [
+    "EX-01"
+   ],
+   "scope": "`:behave`, `:simalt`, `:winpos`/`:winsize`, obsolete commands kept as clear errors; documented per platform."
+  },
+  {
+   "id": "MAP-01",
+   "area": "MAP",
+   "area_name": "Mappings and keys",
+   "title": "Mapping command matrix",
+   "phase": "P1",
+   "complexity": "L",
+   "deps": [
+    "EDT-01",
+    "CMD-01"
+   ],
+   "scope": "`:map`/`:nmap`/`:vmap`/`:xmap`/`:smap`/`:omap`/`:imap`/`:lmap`/`:cmap`/`:tmap`, `!` variants, `:noremap`/`:unmap`/`:mapclear`, mode-specific tables."
+  },
+  {
+   "id": "MAP-02",
+   "area": "MAP",
+   "area_name": "Mappings and keys",
+   "title": "Key notation and special keys",
+   "phase": "P1",
+   "complexity": "L",
+   "deps": [
+    "MAP-01"
+   ],
+   "scope": "`<C-...>`, `<S-...>`, `<M-...>`, `<D-...>`, `<F1>`-`<F12>`, `<Plug>`, `<SID>`, `<script>`, `<expr>`, `<unique>`, `<buffer>`, `<nowait>`, `<silent>`, `<special>`, key code normalization."
+  },
+  {
+   "id": "MAP-03",
+   "area": "MAP",
+   "area_name": "Mappings and keys",
+   "title": "Mapping expansion and timeouts",
+   "phase": "P1",
+   "complexity": "L",
+   "deps": [
+    "MAP-01",
+    "OPT-03"
+   ],
+   "scope": "Recursive vs non-recursive expansion, `'maxmapdepth'`, `'timeout'`/`'ttimeout'`/`'timeoutlen'`/`'ttimeoutlen'`, ambiguous prefix handling, remap stack and error messages."
+  },
+  {
+   "id": "MAP-04",
+   "area": "MAP",
+   "area_name": "Mappings and keys",
+   "title": "Expression and command mappings",
+   "phase": "P2",
+   "complexity": "M",
+   "deps": [
+    "MAP-03",
+    "VIML-05"
+   ],
+   "scope": "`<expr>` return-value parsing, `<cmd>`/`<ScriptCmd>` execution, `v:char`/`v:count` during expansion, errors and abort."
+  },
+  {
+   "id": "MAP-05",
+   "area": "MAP",
+   "area_name": "Mappings and keys",
+   "title": "Mapping introspection",
+   "phase": "P2",
+   "complexity": "M",
+   "deps": [
+    "MAP-01",
+    "VIML-14"
+   ],
+   "scope": "`maparg()`/`mapcheck()`/`mapset()`/`maplist()`/`hasmapto()`, `:map` listing, mode flags, script-local restoration."
+  },
+  {
+   "id": "MAP-06",
+   "area": "MAP",
+   "area_name": "Mappings and keys",
+   "title": "Language mappings",
+   "phase": "P3",
+   "complexity": "M",
+   "deps": [
+    "MAP-01",
+    "ENC-01"
+   ],
+   "scope": "`'langmap'`, `:lmap`, `'iminsert'`/`'imsearch'`, keymap interplay, command-line and insert mode."
+  },
+  {
+   "id": "MAP-07",
+   "area": "MAP",
+   "area_name": "Mappings and keys",
+   "title": "Cmdline mappings",
+   "phase": "P2",
+   "complexity": "M",
+   "deps": [
+    "MAP-01",
+    "CMD-01"
+   ],
+   "scope": "`:cmap`, cmdline mapping expansion, `'cedit'` interaction, paste bypass, timeout and cancel semantics."
+  },
+  {
+   "id": "MAP-08",
+   "area": "MAP",
+   "area_name": "Mappings and keys",
+   "title": "TTY key-code bridge",
+   "phase": "P2",
+   "complexity": "M",
+   "deps": [
+    "OPT-07",
+    "UI-06"
+   ],
+   "scope": "`t_*` key options, `:set termcap`, terminfo capabilities to Vim key notation, unknown sequence fallback and logging."
+  },
+  {
+   "id": "AUC-01",
+   "area": "AUC",
+   "area_name": "Autocommands",
+   "title": "Event registry and firing",
+   "phase": "P1",
+   "complexity": "L",
+   "deps": [
+    "FND-04"
+   ],
+   "scope": "Event definitions and ordering, per-event pattern rules, `v:event` payloads, fast/slow event policy, recursion guard; includes `TextPutPre`/`TextPutPost` and `SessionLoadPre`."
+  },
+  {
+   "id": "AUC-02",
+   "area": "AUC",
+   "area_name": "Autocommands",
+   "title": "`:autocmd` and `:augroup`",
+   "phase": "P1",
+   "complexity": "L",
+   "deps": [
+    "AUC-01",
+    "EX-02"
+   ],
+   "scope": "Add/remove/list, groups, `au!`, `++once`, `++nested`, `<buffer=N>`, event/pattern completion, `:doautocmd`/`:doautoall`."
+  },
+  {
+   "id": "AUC-03",
+   "area": "AUC",
+   "area_name": "Autocommands",
+   "title": "Pattern matching and match variables",
+   "phase": "P1",
+   "complexity": "M",
+   "deps": [
+    "AUC-02"
+   ],
+   "scope": "`*`/`?`/`[...]` patterns, comma-separated patterns, `<amatch>`/`<afile>`/`<abuf>`/`<aevent>`, `expand('<amatch>')`."
+  },
+  {
+   "id": "AUC-04",
+   "area": "AUC",
+   "area_name": "Autocommands",
+   "title": "Execution control",
+   "phase": "P1",
+   "complexity": "M",
+   "deps": [
+    "AUC-02"
+   ],
+   "scope": "`'eventignore'`/`'eventignorewin'`, `:noautocmd`, nested-event suppression, errors inside autocommands, abort/continue semantics."
+  },
+  {
+   "id": "AUC-05",
+   "area": "AUC",
+   "area_name": "Autocommands",
+   "title": "Event execution and error handling",
+   "phase": "P1",
+   "complexity": "L",
+   "deps": [
+    "AUC-02",
+    "VIML-13"
+   ],
+   "scope": "Script context (`<sfile>`/`<stack>`), exceptions, hit-enter avoidance, `v:event` lifetime, reentrancy and `:silent!`."
+  },
+  {
+   "id": "AUC-06",
+   "area": "AUC",
+   "area_name": "Autocommands",
+   "title": "Buffer-local autocommands",
+   "phase": "P1",
+   "complexity": "M",
+   "deps": [
+    "AUC-02",
+    "BUF-02"
+   ],
+   "scope": "`<buffer>` registration, automatic cleanup on wipe, buffer pattern matching, `autocmd_get()` filtering."
+  },
+  {
+   "id": "AUC-07",
+   "area": "AUC",
+   "area_name": "Autocommands",
+   "title": "Filetype, syntax and option event wiring",
+   "phase": "P1",
+   "complexity": "M",
+   "deps": [
+    "AUC-01",
+    "RT-05"
+   ],
+   "scope": "`BufRead/BufNewFile/FileType/Syntax/OptionSet` integration, `:filetype`/`:syntax` loading hooks, secure event ordering."
+  },
+  {
+   "id": "AUC-08",
+   "area": "AUC",
+   "area_name": "Autocommands",
+   "title": "Autocommand scripting API",
+   "phase": "P2",
+   "complexity": "M",
+   "deps": [
+    "AUC-02",
+    "VIML-14"
+   ],
+   "scope": "`autocmd_add()`/`autocmd_delete()`/`autocmd_get()`, group creation, event dictionaries, round-trip with `:autocmd` text."
+  },
+  {
+   "id": "VIML-01",
+   "area": "VIML",
+   "area_name": "Legacy Vim script",
+   "title": "Value model and garbage collector",
+   "phase": "P1",
+   "complexity": "XL",
+   "deps": [
+    "FND-05"
+   ],
+   "scope": "Number (64-bit), Float, byte String (NUL-safe), List, Dict, Blob, Funcref, Partial, Bool, Special, Channel/Job; mark-sweep heap with cycles, roots and deterministic collection points."
+  },
+  {
+   "id": "VIML-02",
+   "area": "VIML",
+   "area_name": "Legacy Vim script",
+   "title": "Expression and script parser",
+   "phase": "P1",
+   "complexity": "XL",
+   "deps": [
+    "VIML-01"
+   ],
+   "scope": "Pratt/recursive-descent expression grammar, `:let`/`:call`/`:execute` forms, function bodies, line continuation, comments, heredoc, string escapes, error recovery with line numbers."
+  },
+  {
+   "id": "VIML-03",
+   "area": "VIML",
+   "area_name": "Legacy Vim script",
+   "title": "Variables and scopes",
+   "phase": "P1",
+   "complexity": "L",
+   "deps": [
+    "VIML-02"
+   ],
+   "scope": "`g: b: w: t: s: l: a: v:`, `:let`/`:const`/`:unlet`/`:unlet!`, `:lockvar`/`:unlockvar`, environment `$VAR`, options `&opt`, registers `@r`, destructuring."
+  },
+  {
+   "id": "VIML-04",
+   "area": "VIML",
+   "area_name": "Legacy Vim script",
+   "title": "Function definitions and calls",
+   "phase": "P1",
+   "complexity": "L",
+   "deps": [
+    "VIML-02"
+   ],
+   "scope": "`:function`/`:endfunction`, `:call`, `:return`, `:delfunction`, default arguments, varargs `.../a:000/a:0/a:1`, dict functions, recursion, `'maxfuncdepth'`."
+  },
+  {
+   "id": "VIML-05",
+   "area": "VIML",
+   "area_name": "Legacy Vim script",
+   "title": "Funcref, Partial, lambda and closures",
+   "phase": "P1",
+   "complexity": "L",
+   "deps": [
+    "VIML-04"
+   ],
+   "scope": "`function()`/`funcref()`, `Partial` with bound args/dict, `{x -> ...}`, closures over outer locals, `->` method chains, `call()`, garbage-collected function values."
+  },
+  {
+   "id": "VIML-06",
+   "area": "VIML",
+   "area_name": "Legacy Vim script",
+   "title": "Control flow and exceptions",
+   "phase": "P1",
+   "complexity": "L",
+   "deps": [
+    "VIML-02"
+   ],
+   "scope": "`:if/:elseif/:else/:endif`, `:while/:for`, `:break/:continue`, `:try/:catch/:finally/:endtry/:throw`, `:finish`, exception patterns and cleanup ordering."
+  },
+  {
+   "id": "VIML-07",
+   "area": "VIML",
+   "area_name": "Legacy Vim script",
+   "title": "Literals, collections and slicing",
+   "phase": "P1",
+   "complexity": "L",
+   "deps": [
+    "VIML-01"
+   ],
+   "scope": "Number formats (decimal/octal/hex/binary), Float, strings and escapes, List/Dict/Blob literals, indexing and slicing, negative indices, `v:null`/`v:none`/`v:true`/`v:false`."
+  },
+  {
+   "id": "VIML-08",
+   "area": "VIML",
+   "area_name": "Legacy Vim script",
+   "title": "Operators, coercion and comparison",
+   "phase": "P1",
+   "complexity": "M",
+   "deps": [
+    "VIML-07"
+   ],
+   "scope": "Arithmetic, bitwise, boolean short-circuit, string/list/dict comparison, `==#`/`==?`/`is`/`isnot`/`=~`/`!~`, type coercion table, division by zero errors."
+  },
+  {
+   "id": "VIML-09",
+   "area": "VIML",
+   "area_name": "Legacy Vim script",
+   "title": "Script-local scope and script identity",
+   "phase": "P1",
+   "complexity": "M",
+   "deps": [
+    "VIML-03",
+    "RT-04"
+   ],
+   "scope": "`s:` variables, `<SID>`, `<script>`, `:scriptnames`, `:scriptversion`, script IDs stable across reload, `getscriptinfo()`."
+  },
+  {
+   "id": "VIML-10",
+   "area": "VIML",
+   "area_name": "Legacy Vim script",
+   "title": "Autoload functions",
+   "phase": "P1",
+   "complexity": "L",
+   "deps": [
+    "VIML-04",
+    "RT-02"
+   ],
+   "scope": "`foo#bar#baz()` naming, lazy sourcing of `autoload/foo/bar.vim`, `#` escaping, load-once semantics, error attribution to the loaded script."
+  },
+  {
+   "id": "VIML-11",
+   "area": "VIML",
+   "area_name": "Legacy Vim script",
+   "title": "`:execute`, `eval()` and capture",
+   "phase": "P1",
+   "complexity": "M",
+   "deps": [
+    "VIML-02",
+    "MSG-03"
+   ],
+   "scope": "`:execute` with expression lists, `eval()`, `:redir` integration, nested command strings, newline handling, evaluation errors and abort."
+  },
+  {
+   "id": "VIML-12",
+   "area": "VIML",
+   "area_name": "Legacy Vim script",
+   "title": "Exceptions and throwpoints",
+   "phase": "P1",
+   "complexity": "M",
+   "deps": [
+    "VIML-06"
+   ],
+   "scope": "`v:exception`, `v:throwpoint`, `:throw`, `:catch /pat/`, rethrow, error conversion, `try` around Ex commands, cleanup with `:finally`."
+  },
+  {
+   "id": "VIML-13",
+   "area": "VIML",
+   "area_name": "Legacy Vim script",
+   "title": "Predefined `v:` variables",
+   "phase": "P1",
+   "complexity": "M",
+   "deps": [
+    "VIML-03"
+   ],
+   "scope": "`v:count/count1/register`, `v:lnum`, `v:val/key`, `v:char`, `v:completed_item`, `v:event`, `v:option_*`, `v:errmsg/statusmsg/warningmsg`, `v:version/versionlong`, `v:vim_did_enter`, `v:argv`, `v:shell_error`, `v:termresponse`, `v:imagebackend`, `v:testing`, `v:exiting`, type constants."
+  },
+  {
+   "id": "VIML-14",
+   "area": "VIML",
+   "area_name": "Legacy Vim script",
+   "title": "Built-in function framework",
+   "phase": "P2",
+   "complexity": "XL",
+   "deps": [
+    "VIML-02"
+   ],
+   "scope": "Arity/type metadata, pure vs context functions, lazy arguments, overloads, `exists('*f')`, `has()`, dispatch table, error messages and doc links; pure function families implemented here."
+  },
+  {
+   "id": "VIML-15",
+   "area": "VIML",
+   "area_name": "Legacy Vim script",
+   "title": "Editor-context built-in functions",
+   "phase": "P2",
+   "complexity": "XL",
+   "deps": [
+    "VIML-14"
+   ],
+   "scope": "Buffer/window/tab/option/cursor/mark/search/syntax/fold/sign/textprop/quickfix/tag functions; borrowed editor context with reentrancy checks, no dangling references."
+  },
+  {
+   "id": "VIML-16",
+   "area": "VIML",
+   "area_name": "Legacy Vim script",
+   "title": "Option and callback functions",
+   "phase": "P2",
+   "complexity": "L",
+   "deps": [
+    "VIML-05",
+    "OPT-03"
+   ],
+   "scope": "`'statusline'`/`'tabline'`/`'foldtext'`/`'indentexpr'`/`'omnifunc'`/`'completefunc'`/`'tagfunc'`/`'formatexpr'`/`'includeexpr'`/`'balloonexpr'` callbacks, error containment and caching."
+  },
+  {
+   "id": "VIML-17",
+   "area": "VIML",
+   "area_name": "Legacy Vim script",
+   "title": "Profiling and debugging",
+   "phase": "P3",
+   "complexity": "L",
+   "deps": [
+    "VIML-04",
+    "MSG-02"
+   ],
+   "scope": "`:profile`/`:profdel`/`profile_func()`/`profile_file()`, `:breakadd`/`:breakdel`/`:breaklist`/`:debug`, `'debug'` option, source breakpoints."
+  },
+  {
+   "id": "VIML-18",
+   "area": "VIML",
+   "area_name": "Legacy Vim script",
+   "title": "Script sourcing semantics",
+   "phase": "P1",
+   "complexity": "M",
+   "deps": [
+    "VIML-02",
+    "RT-04"
+   ],
+   "scope": "`:source`, line continuation rules, `:finish`, `:scriptencoding`, `:scriptversion`, modeline-free script header, nesting and error reporting."
+  },
+  {
+   "id": "FUN-01",
+   "area": "FUN",
+   "area_name": "Built-in function families",
+   "title": "String, byte and character functions",
+   "phase": "P2",
+   "complexity": "L",
+   "deps": [
+    "VIML-14"
+   ],
+   "scope": "`strlen strchars strwidth strdisplaywidth strpart strcharpart strgetchar str2list list2str char2nr nr2char strtrans tr escape shellescape fnameescape printf split join tolower toupper` and friends."
+  },
+  {
+   "id": "FUN-02",
+   "area": "FUN",
+   "area_name": "Built-in function families",
+   "title": "Number, math and float functions",
+   "phase": "P2",
+   "complexity": "M",
+   "deps": [
+    "VIML-14"
+   ],
+   "scope": "`abs ceil floor round trunc fmod pow sqrt log log10 exp sin cos tan asin acos atan atan2 sinh cosh tanh isinf isnan float2nr str2float rand srand and or xor invert`."
+  },
+  {
+   "id": "FUN-03",
+   "area": "FUN",
+   "area_name": "Built-in function families",
+   "title": "List, dict, blob and functional helpers",
+   "phase": "P2",
+   "complexity": "L",
+   "deps": [
+    "VIML-14"
+   ],
+   "scope": "`add insert remove extend extendnew copy deepcopy map mapnew filter reduce forEach sort uniq reverse range repeat slice flatten flattennew index count get has_key empty len keys values items`, Blob conversion."
+  },
+  {
+   "id": "FUN-04",
+   "area": "FUN",
+   "area_name": "Built-in function families",
+   "title": "Type, reflection and existence",
+   "phase": "P2",
+   "complexity": "M",
+   "deps": [
+    "VIML-14"
+   ],
+   "scope": "`type()`, `typename()`, `exists()`, `has()`, `has_key()`, `get()`, `empty()`, `v:t_*` constants, gated `test_null_*`."
+  },
+  {
+   "id": "FUN-05",
+   "area": "FUN",
+   "area_name": "Built-in function families",
+   "title": "Buffer, window and tab information",
+   "phase": "P2",
+   "complexity": "L",
+   "deps": [
+    "VIML-15",
+    "WIN-07"
+   ],
+   "scope": "`bufnr bufname bufloaded buflisted bufexists getbufinfo getbufoneline getbufline setbufline appendbufline deletebufline winbufnr winnr win_getid winlayout tabpagewinnr getwininfo gettabinfo`."
+  },
+  {
+   "id": "FUN-06",
+   "area": "FUN",
+   "area_name": "Built-in function families",
+   "title": "Cursor, position, marks and jumps",
+   "phase": "P2",
+   "complexity": "M",
+   "deps": [
+    "VIML-15",
+    "BUF-07"
+   ],
+   "scope": "`cursor getcurpos setpos getpos getcursorcharpos setcursorcharpos getcharpos setcharpos virtcol virtcol2col charcol charidx byteidx byteidxcomp line col wincol winline getmarklist getjumplist getchangelist`."
+  },
+  {
+   "id": "FUN-07",
+   "area": "FUN",
+   "area_name": "Built-in function families",
+   "title": "Search, regex and substitution",
+   "phase": "P2",
+   "complexity": "L",
+   "deps": [
+    "VIML-15",
+    "REGEX-01"
+   ],
+   "scope": "`search searchpos searchpair searchpairpos searchcount match matchend matchlist matchstr matchstrpos substitute matchfuzzy matchfuzzypos glob2regpat`."
+  },
+  {
+   "id": "FUN-08",
+   "area": "FUN",
+   "area_name": "Built-in function families",
+   "title": "Files, paths, system, environment and time",
+   "phase": "P2",
+   "complexity": "L",
+   "deps": [
+    "VIML-14",
+    "FND-07"
+   ],
+   "scope": "`fnamemodify expand glob globpath readdir readdirex getcwd chdir mkdir delete rename copy getftype getfsize getftime filereadable filewritable isdirectory resolve simplify tempname writefile readfile readblob writeblob system systemlist executable exepath getenv setenv environ hostname localtime strftime strptime reltime reltimestr reltimefloat`."
+  },
+  {
+   "id": "FUN-09",
+   "area": "FUN",
+   "area_name": "Built-in function families",
+   "title": "Serialization, encoding and hashing",
+   "phase": "P2",
+   "complexity": "M",
+   "deps": [
+    "VIML-14"
+   ],
+   "scope": "`json_encode json_decode base64_encode base64_decode sha256 blob2list list2blob blob2str str2blob str2list list2str strutf16len utf16idx`."
+  },
+  {
+   "id": "FUN-10",
+   "area": "FUN",
+   "area_name": "Built-in function families",
+   "title": "Input, UI, screen and completion",
+   "phase": "P2",
+   "complexity": "L",
+   "deps": [
+    "VIML-15",
+    "CMD-06"
+   ],
+   "scope": "`input inputlist inputsecret confirm getchar getcharstr getcharmod getmousepos screenchar screenchars screenstring screenpos screenattr screencol screenrow complete complete_add complete_check complete_info pumvisible wildmenumode state mode visualmode getcmdline getcmdpos setcmdline setcmdpos getcmdtype getcmdcompltype getcmdscreenpos getbgcolor preinserted`."
+  },
+  {
+   "id": "FUN-11",
+   "area": "FUN",
+   "area_name": "Built-in function families",
+   "title": "Syntax, highlight, folds, signs and properties",
+   "phase": "P2",
+   "complexity": "L",
+   "deps": [
+    "VIML-15",
+    "SYN-09"
+   ],
+   "scope": "`synID synIDattr synIDtrans synstack hlID hlexists hlget hlset diff_hlID foldclosed foldclosedend foldlevel foldtext foldtextresult sign_define sign_place sign_unplace sign_getplaced sign_getdefined sign_jump prop_type_add prop_type_change prop_type_delete prop_type_get prop_add prop_add_list prop_remove prop_list prop_find`."
+  },
+  {
+   "id": "FUN-12",
+   "area": "FUN",
+   "area_name": "Built-in function families",
+   "title": "Quickfix, tags and help",
+   "phase": "P2",
+   "complexity": "M",
+   "deps": [
+    "VIML-15",
+    "QF-04"
+   ],
+   "scope": "`getqflist setqflist getloclist setloclist taglist tagfiles gettagstack settagstack getcompletion('help')`, help tag lookup."
+  },
+  {
+   "id": "FUN-13",
+   "area": "FUN",
+   "area_name": "Built-in function families",
+   "title": "Jobs, channels and timers",
+   "phase": "P3",
+   "complexity": "L",
+   "deps": [
+    "VIML-15",
+    "JOB-04"
+   ],
+   "scope": "`job_start job_stop job_status job_info job_getchannel ch_open ch_listen ch_close ch_sendraw ch_sendexpr ch_evalexpr ch_evalraw ch_read ch_readraw ch_readblob ch_status ch_info ch_getbufnr ch_getjob ch_log timer_start timer_stop timer_pause timer_info`."
+  },
+  {
+   "id": "FUN-14",
+   "area": "FUN",
+   "area_name": "Built-in function families",
+   "title": "Spell and sound",
+   "phase": "P3",
+   "complexity": "M",
+   "deps": [
+    "VIML-14",
+    "SPELL-06"
+   ],
+   "scope": "`spellbadword spellsuggest soundfold sound_playfile sound_clear`, feature-gated stubs otherwise."
+  },
+  {
+   "id": "FUN-15",
+   "area": "FUN",
+   "area_name": "Built-in function families",
+   "title": "Popup, menu and balloon",
+   "phase": "P3",
+   "complexity": "M",
+   "deps": [
+    "VIML-15",
+    "DSP-07"
+   ],
+   "scope": "`popup_create popup_atcursor popup_menu popup_notification popup_dialog popup_close popup_hide popup_show popup_move popup_setoptions popup_settext popup_getpos popup_getoptions popup_clear popup_list popup_findinfo popup_findpreview popup_filter_menu popup_filter_yesno menu_info balloon_show balloon_gettext`."
+  },
+  {
+   "id": "FUN-16",
+   "area": "FUN",
+   "area_name": "Built-in function families",
+   "title": "Testing, assertions and profiling",
+   "phase": "P2",
+   "complexity": "M",
+   "deps": [
+    "VIML-14"
+   ],
+   "scope": "`assert_equal assert_notequal assert_true assert_false assert_match assert_notmatch assert_inrange assert_fails assert_exception assert_beeps assert_nobeep assert_report test_* profile_*`, `v:errors`."
+  },
+  {
+   "id": "FUN-17",
+   "area": "FUN",
+   "area_name": "Built-in function families",
+   "title": "Meta-call functions",
+   "phase": "P2",
+   "complexity": "M",
+   "deps": [
+    "VIML-11"
+   ],
+   "scope": "`call()`, `function()`, `funcref()`, `eval()`, `execute()`, `win_execute()`, argument evaluation order, errors and return coercion."
+  },
+  {
+   "id": "FUN-18",
+   "area": "FUN",
+   "area_name": "Built-in function families",
+   "title": "Listeners and introspection helpers",
+   "phase": "P2",
+   "complexity": "S",
+   "deps": [
+    "FUN-05"
+   ],
+   "scope": "`listener_add listener_remove getscriptinfo getinfo getcellwidths setcellwidths getpid version`, `has()` edge cases."
+  },
+  {
+   "id": "REGEX-01",
+   "area": "REGEX",
+   "area_name": "Vim regular expressions",
+   "title": "Parser, AST and magic modes",
+   "phase": "P1",
+   "complexity": "XL",
+   "deps": [
+    "FND-02"
+   ],
+   "scope": "`\\v \\m \\M \\V` magic switching, atoms, groups `\\%(`, alternation, quantifiers `* \\+ \\= \\{n,m} \\{-}`, character classes, escapes, delimiter handling, syntax errors with positions."
+  },
+  {
+   "id": "REGEX-02",
+   "area": "REGEX",
+   "area_name": "Vim regular expressions",
+   "title": "Backtracking VM and captures",
+   "phase": "P1",
+   "complexity": "XL",
+   "deps": [
+    "REGEX-01"
+   ],
+   "scope": "Byte-oriented matching with capture groups `\\1-\\9`, greedy/lazy quantifiers, backreferences, leftmost-first semantics, recursion/step limits, match spans."
+  },
+  {
+   "id": "REGEX-03",
+   "area": "REGEX",
+   "area_name": "Vim regular expressions",
+   "title": "Lookaround and boundary atoms",
+   "phase": "P1",
+   "complexity": "L",
+   "deps": [
+    "REGEX-02"
+   ],
+   "scope": "`\\@= \\@! \\@<= \\@<! \\@>`, `\\zs \\ze`, `\\%^ \\%$ \\%# \\%V \\%'m \\%l \\%c`, word-boundary atoms, zero-width repetition rules."
+  },
+  {
+   "id": "REGEX-04",
+   "area": "REGEX",
+   "area_name": "Vim regular expressions",
+   "title": "Multiline and buffer-context matching",
+   "phase": "P2",
+   "complexity": "L",
+   "deps": [
+    "REGEX-02",
+    "BUF-01"
+   ],
+   "scope": "`\\_` line atoms, `\\_^ \\_$`, `\\n`, `\\%V` visual, cursor atom, mark atom, line/column atoms, bounded context and performance."
+  },
+  {
+   "id": "REGEX-05",
+   "area": "REGEX",
+   "area_name": "Vim regular expressions",
+   "title": "Character classes and case folding",
+   "phase": "P1",
+   "complexity": "L",
+   "deps": [
+    "REGEX-01",
+    "ENC-04"
+   ],
+   "scope": "`\\i \\I \\k \\K \\f \\F \\p \\P \\s \\S \\d \\D \\w \\W \\a \\A \\l \\L \\u \\U \\x \\X \\o \\O \\h \\H`, POSIX classes, `[[=a=]]` equivalence, `\\c \\C`, `'ignorecase'`/`'smartcase'`."
+  },
+  {
+   "id": "REGEX-06",
+   "area": "REGEX",
+   "area_name": "Vim regular expressions",
+   "title": "Engine integration",
+   "phase": "P1",
+   "complexity": "L",
+   "deps": [
+    "REGEX-02"
+   ],
+   "scope": "Search (`/ ? n N * #`), `:substitute`, `:global`, `match()` family, syntax engine, filetype patterns, quickfix errorformat, tag search; shared compiled-pattern cache."
+  },
+  {
+   "id": "REGEX-07",
+   "area": "REGEX",
+   "area_name": "Vim regular expressions",
+   "title": "NFA/PikeVM acceleration",
+   "phase": "P2",
+   "complexity": "L",
+   "deps": [
+    "REGEX-02"
+   ],
+   "scope": "Literal prefix scan, first-byte bitmap, NFA simulation for patterns without backrefs/lookaround, `'regexpengine'` selection, fallback to backtracking."
+  },
+  {
+   "id": "REGEX-08",
+   "area": "REGEX",
+   "area_name": "Vim regular expressions",
+   "title": "Timeouts, interrupts and limits",
+   "phase": "P1",
+   "complexity": "M",
+   "deps": [
+    "REGEX-02",
+    "FND-03"
+   ],
+   "scope": "Step budget, `got_int` checks, `'redrawtime'`/`'matchtime'`, backtracking limit errors, resumable matching for huge files."
+  },
+  {
+   "id": "REGEX-09",
+   "area": "REGEX",
+   "area_name": "Vim regular expressions",
+   "title": "Differential regex corpus",
+   "phase": "P2",
+   "complexity": "L",
+   "deps": [
+    "REGEX-02",
+    "TST-02"
+   ],
+   "scope": "Extract patterns from Vim docs/runtime/syntax and compare match spans against Vim 9.2; fuzz pattern parser and VM."
+  },
+  {
+   "id": "SYN-01",
+   "area": "SYN",
+   "area_name": "Syntax and highlighting",
+   "title": "Highlight table and default groups",
+   "phase": "P1",
+   "complexity": "M",
+   "deps": [
+    "UI-01"
+   ],
+   "scope": "Global/local highlight groups, default links, `Normal`/`Comment`/`Constant` families, `Popup`/`PopupBorder`/`PopupTitle`/`VertSplitNC`, `:hi clear`, `:highlight` with no args, group redefinition and `hlID()`."
+  },
+  {
+   "id": "SYN-02",
+   "area": "SYN",
+   "area_name": "Syntax and highlighting",
+   "title": "Highlight attributes, colors and links",
+   "phase": "P1",
+   "complexity": "L",
+   "deps": [
+    "SYN-01"
+   ],
+   "scope": "`cterm`/`gui` attributes, `ctermfg/bg`, `guifg/bg`, `guisp`, `font`, `blend` (stored), `NONE`, `:hi link`/`:hi def link`/`:hi!`, `'winhighlight'` window-local remapping, color names and `#RRGGBB`."
+  },
+  {
+   "id": "SYN-03",
+   "area": "SYN",
+   "area_name": "Syntax and highlighting",
+   "title": "Background and color resolution",
+   "phase": "P1",
+   "complexity": "M",
+   "deps": [
+    "SYN-02",
+    "UI-07"
+   ],
+   "scope": "`'background'` light/dark, `'termguicolors'`, `t_Co`, `v:colornames`, cterm nearest-color fallback, `ColorScheme` event ordering."
+  },
+  {
+   "id": "SYN-04",
+   "area": "SYN",
+   "area_name": "Syntax and highlighting",
+   "title": "Colorschemes",
+   "phase": "P1",
+   "complexity": "M",
+   "deps": [
+    "SYN-02",
+    "RT-01"
+   ],
+   "scope": "`:colorscheme`, `colors/*.vim` search order, `g:colors_name`, `:hi clear` then reload, errors in colorschemes, `after/colors`."
+  },
+  {
+   "id": "SYN-05",
+   "area": "SYN",
+   "area_name": "Syntax and highlighting",
+   "title": "Syntax engine core",
+   "phase": "P1",
+   "complexity": "XL",
+   "deps": [
+    "REGEX-06",
+    "BUF-01"
+   ],
+   "scope": "`:syn keyword/match/region/cluster/include`, start/end/skip patterns, priorities, keyword boundaries, case options, per-line state and highlight spans."
+  },
+  {
+   "id": "SYN-06",
+   "area": "SYN",
+   "area_name": "Syntax and highlighting",
+   "title": "Syntax containment and linking",
+   "phase": "P1",
+   "complexity": "XL",
+   "deps": [
+    "SYN-05"
+   ],
+   "scope": "`contains`/`containedin`/`contained`, `nextgroup`, `matchgroup`, `transparent`, `extend`/`keepend`, `oneline`, `excludenl`, offset modifiers `ms=`/`me=`/`hs=`/`he=`/`rs=`/`re=`."
+  },
+  {
+   "id": "SYN-07",
+   "area": "SYN",
+   "area_name": "Syntax and highlighting",
+   "title": "Syntax synchronization and invalidation",
+   "phase": "P2",
+   "complexity": "L",
+   "deps": [
+    "SYN-05"
+   ],
+   "scope": "`syn sync fromstart/minlines/maxlines/linebreaks`, ccomment, invalidation on edit/undo, region stack cache, bounded re-parse and incremental redraw."
+  },
+  {
+   "id": "SYN-08",
+   "area": "SYN",
+   "area_name": "Syntax and highlighting",
+   "title": "`:syntax` commands and Syntax event",
+   "phase": "P1",
+   "complexity": "M",
+   "deps": [
+    "SYN-05",
+    "AUC-07"
+   ],
+   "scope": "`:syntax on/off/enable/clear`, `'syntax'`, `Syntax` event, `syntax/syntax.vim` loading, `:runtime! syntax/<ft>.vim` order, `syntax_cmd` handling."
+  },
+  {
+   "id": "SYN-09",
+   "area": "SYN",
+   "area_name": "Syntax and highlighting",
+   "title": "Syntax and highlight introspection",
+   "phase": "P2",
+   "complexity": "M",
+   "deps": [
+    "SYN-05",
+    "VIML-15"
+   ],
+   "scope": "`synID()`/`synIDattr()`/`synIDtrans()`/`synstack()`, `hlget()`/`hlset()`, `diff_hlID()`, `synconcealed()`, stable IDs across reload."
+  },
+  {
+   "id": "SYN-10",
+   "area": "SYN",
+   "area_name": "Syntax and highlighting",
+   "title": "Concealment",
+   "phase": "P2",
+   "complexity": "M",
+   "deps": [
+    "SYN-05",
+    "DSP-08"
+   ],
+   "scope": "`conceal`/`concealends`/`cchar`, `'conceallevel'`/`'concealcursor'`, cursor-line reveal, wide cchar, interaction with wrapping and visual block."
+  },
+  {
+   "id": "SYN-11",
+   "area": "SYN",
+   "area_name": "Syntax and highlighting",
+   "title": "Match highlighting",
+   "phase": "P2",
+   "complexity": "M",
+   "deps": [
+    "SYN-01",
+    "REGEX-06"
+   ],
+   "scope": "`:match`/`:2match`/`:3match`, `matchadd()`/`matchaddpos()`/`matchdelete()`/`getmatches()`/`matcharg()`, window-local matches, priority and `'matchpairs'`/`'showmatch'`."
+  },
+  {
+   "id": "SYN-12",
+   "area": "SYN",
+   "area_name": "Syntax and highlighting",
+   "title": "Runtime syntax corpus compatibility",
+   "phase": "P2",
+   "complexity": "XL",
+   "deps": [
+    "SYN-06",
+    "RT-07"
+   ],
+   "scope": "Load all pinned `syntax/*.vim` files, apply to representative samples, compare highlight traces with Vim, track per-file pass/fail and regressions."
+  },
+  {
+   "id": "SYN-13",
+   "area": "SYN",
+   "area_name": "Syntax and highlighting",
+   "title": "Syntax profiling",
+   "phase": "P3",
+   "complexity": "S",
+   "deps": [
+    "SYN-07"
+   ],
+   "scope": "`:syntime on/off/report/clear`, per-pattern time/count, no overhead when off."
+  },
+  {
+   "id": "DSP-01",
+   "area": "DSP",
+   "area_name": "Display features",
+   "title": "Fold engine and methods",
+   "phase": "P2",
+   "complexity": "L",
+   "deps": [
+    "BUF-01",
+    "REGEX-06"
+   ],
+   "scope": "`'foldmethod'` manual/indent/expr/marker/syntax/diff, fold levels, `'foldignore'`/`'foldnestmax'`/`'foldminlines'`, fold text, per-window fold state."
+  },
+  {
+   "id": "DSP-02",
+   "area": "DSP",
+   "area_name": "Display features",
+   "title": "Fold commands and API",
+   "phase": "P2",
+   "complexity": "L",
+   "deps": [
+    "DSP-01",
+    "WIN-02"
+   ],
+   "scope": "`zo zc za zR zM zr zm zj zk`, `[z`/`]z`, `:foldopen/foldclose/folddo/foldd`, `foldclosed()`/`foldclosedend()`/`foldlevel()`/`foldtext()`/`foldtextresult()`, `'foldopen'`/`'foldclose'`/`'foldlevel'`/`'foldenable'`."
+  },
+  {
+   "id": "DSP-03",
+   "area": "DSP",
+   "area_name": "Display features",
+   "title": "Fold display and column",
+   "phase": "P2",
+   "complexity": "M",
+   "deps": [
+    "DSP-01",
+    "WIN-10"
+   ],
+   "scope": "`'foldcolumn'` (number/auto), fold markers, fold text rendering, click regions, interaction with signs and numbers, `'foldtext'` errors."
+  },
+  {
+   "id": "DSP-04",
+   "area": "DSP",
+   "area_name": "Display features",
+   "title": "Signs",
+   "phase": "P2",
+   "complexity": "L",
+   "deps": [
+    "BUF-01",
+    "SYN-01"
+   ],
+   "scope": "`:sign define/place/unplace/list/jump`, groups/priorities, `sign_place()`/`sign_unplace()`/`sign_getplaced()`/`sign_getdefined()`/`sign_jump()`, `'signcolumn'` auto/number, sign clicks, placement across edits/undo."
+  },
+  {
+   "id": "DSP-05",
+   "area": "DSP",
+   "area_name": "Display features",
+   "title": "Text properties",
+   "phase": "P2",
+   "complexity": "XL",
+   "deps": [
+    "BUF-01",
+    "SYN-01"
+   ],
+   "scope": "`prop_type_add/change/delete/get`, `prop_add()`/`prop_add_list()`/`prop_remove()`/`prop_list()`/`prop_find()`, `highlight`/`text`/`virt_text`/`start_incl`/`end_incl`/`priority`/`combine`/`repeat`, text alignment, property lifetime across edits."
+  },
+  {
+   "id": "DSP-06",
+   "area": "DSP",
+   "area_name": "Display features",
+   "title": "Virtual text and virtual lines",
+   "phase": "P2",
+   "complexity": "XL",
+   "deps": [
+    "DSP-05",
+    "WIN-10"
+   ],
+   "scope": "`virt_text`/`virt_text_pos` (inline/overlay/eol/right_align), `virt_lines`/`virt_lines_above`/`virt_lines_leftcol`, width/priority, cursor and mouse interactions, redraw cost control."
+  },
+  {
+   "id": "DSP-07",
+   "area": "DSP",
+   "area_name": "Display features",
+   "title": "Popup and floating windows",
+   "phase": "P2",
+   "complexity": "XL",
+   "deps": [
+    "WIN-01",
+    "UI-03"
+   ],
+   "scope": "`popup_create()`/`popup_atcursor()`/`popup_menu()`/`popup_notification()`/`popup_dialog()`/`popup_close()`/`popup_move()`/`popup_setoptions()`/`popup_settext()`/`popup_getpos()`, border/title/scrollbar/mask/zindex, filters and callbacks, `:popup` command; image attributes deferred to MISC-12."
+  },
+  {
+   "id": "DSP-08",
+   "area": "DSP",
+   "area_name": "Display features",
+   "title": "List chars, fill chars and break indent",
+   "phase": "P1",
+   "complexity": "M",
+   "deps": [
+    "WIN-10"
+   ],
+   "scope": "`'list'`/`'listchars'`, `'fillchars'`, `'showbreak'`, `'breakindent'`/`'breakindentopt'`, tab/space/trail/nbsp/eol/extends/precedes, `'display'` lastline/truncate/uhex."
+  },
+  {
+   "id": "DSP-09",
+   "area": "DSP",
+   "area_name": "Display features",
+   "title": "Wrapping and smooth scrolling",
+   "phase": "P1",
+   "complexity": "L",
+   "deps": [
+    "WIN-02"
+   ],
+   "scope": "`'wrap'`/`'nowrap'`, `'linebreak'`/`'breakat'`, `'sidescroll'`/`'sidescrolloff'`, `'smoothscroll'`, `gj/gk`/`g0/g$/gm`, wrapped-line cursor and mouse mapping, skipcol."
+  },
+  {
+   "id": "DSP-10",
+   "area": "DSP",
+   "area_name": "Display features",
+   "title": "Gutters and screen columns",
+   "phase": "P1",
+   "complexity": "M",
+   "deps": [
+    "WIN-10"
+   ],
+   "scope": "`'number'`/`'relativenumber'`/`'numberwidth'`/`'numberformat'`, `'colorcolumn'`, `'signcolumn'`, `'foldcolumn'`, `'cursorline'`/`'cursorlineopt'`, `'cursorcolumn'`, column width and click regions."
+  },
+  {
+   "id": "DSP-11",
+   "area": "DSP",
+   "area_name": "Display features",
+   "title": "Diff engine",
+   "phase": "P2",
+   "complexity": "XL",
+   "deps": [
+    "BUF-01",
+    "WIN-02",
+    "DSP-01"
+   ],
+   "scope": "`:diffthis`/`:diffoff`/`:diffupdate`, internal Myers diff vs external `'diffexpr'`, `'diffopt'`/`'diffanchors'`, diff blocks, filler lines, fold integration, `diff_filler()`/`diff_hlID()`."
+  },
+  {
+   "id": "DSP-12",
+   "area": "DSP",
+   "area_name": "Display features",
+   "title": "Diff commands and navigation",
+   "phase": "P2",
+   "complexity": "L",
+   "deps": [
+    "DSP-11",
+    "EX-01"
+   ],
+   "scope": "`:diffsplit`/`:diffpatch`/`:diffget`/`:diffput`/`:diffg`/`:diffp`, `[c`/`]c`, `do`/`dp`, `'diff'` per window, `:diffoff!`, three-way merge basics."
+  },
+  {
+   "id": "DSP-13",
+   "area": "DSP",
+   "area_name": "Display features",
+   "title": "Cursor line, column and conceal interaction",
+   "phase": "P1",
+   "complexity": "S",
+   "deps": [
+    "SYN-01",
+    "WIN-10"
+   ],
+   "scope": "`'cursorline'`/`'cursorcolumn'`/`'colorcolumn'` priority, conceal reveal on cursor line, cursor screen position with virtual text, no flicker."
+  },
+  {
+   "id": "DSP-14",
+   "area": "DSP",
+   "area_name": "Display features",
+   "title": "Balloon evaluation",
+   "phase": "P3",
+   "complexity": "M",
+   "deps": [
+    "UI-02",
+    "VIML-16"
+   ],
+   "scope": "`'ballooneval'`/`'balloonevalterm'`/`'balloonexpr'`/`'balloondelay'`, `balloon_show()`/`balloon_gettext()`, TUI fallback (message/echo) and GUI hook."
+  },
+  {
+   "id": "QF-01",
+   "area": "QF",
+   "area_name": "Quickfix and location lists",
+   "title": "Quickfix and location list model",
+   "phase": "P1",
+   "complexity": "M",
+   "deps": [
+    "FND-05"
+   ],
+   "scope": "Entries (filename, lnum, col, text, type, valid, nr, module, pattern), list stacks/IDs, titles, context, `'switchbuf'`, per-window location lists."
+  },
+  {
+   "id": "QF-02",
+   "area": "QF",
+   "area_name": "Quickfix and location lists",
+   "title": "`'errorformat'` parser",
+   "phase": "P2",
+   "complexity": "L",
+   "deps": [
+    "QF-01",
+    "REGEX-06"
+   ],
+   "scope": "`%f %l %c %m %t %n %o %p %v %s`, prefixes `%+`/`%-`, multiline `%A/%C/%Z`, `%G` ignore, directory/file stacks, `'efm'` comma escaping."
+  },
+  {
+   "id": "QF-03",
+   "area": "QF",
+   "area_name": "Quickfix and location lists",
+   "title": "Quickfix window and navigation",
+   "phase": "P2",
+   "complexity": "L",
+   "deps": [
+    "QF-01",
+    "BUF-09"
+   ],
+   "scope": "`:copen`/`:cclose`/`:cwindow`, `:cnext`/`:cprev`/`:cfirst`/`:clast`/`:cc`, `:lopen` family, error highlighting, `'quickfixtextfunc'`, `QuickFixCmdPre/Post`, window height."
+  },
+  {
+   "id": "QF-04",
+   "area": "QF",
+   "area_name": "Quickfix and location lists",
+   "title": "Quickfix and location list functions",
+   "phase": "P2",
+   "complexity": "M",
+   "deps": [
+    "QF-01",
+    "VIML-15"
+   ],
+   "scope": "`getqflist()`/`setqflist()`/`getloclist()`/`setloclist()`, `:cexpr`/`:caddexpr`/`:cbuffer`/`:cgetexpr`/`:cgetbuffer`, IDs and titles."
+  },
+  {
+   "id": "QF-05",
+   "area": "QF",
+   "area_name": "Quickfix and location lists",
+   "title": "Make, grep, vimgrep and cscope",
+   "phase": "P2",
+   "complexity": "L",
+   "deps": [
+    "QF-02",
+    "EX-08"
+   ],
+   "scope": "`:make`/`:grep`/`:vimgrep`/`:lmake`/`:lgrep`/`:lvimgrep`, `'makeprg'`/`'grepprg'`, `'shellpipe'`, synchronous execution first (JOB-05 adds async), `:cscope` gated by feature."
+  },
+  {
+   "id": "QF-06",
+   "area": "QF",
+   "area_name": "Quickfix and location lists",
+   "title": "Multi-file quickfix iteration",
+   "phase": "P2",
+   "complexity": "M",
+   "deps": [
+    "QF-03",
+    "EX-07"
+   ],
+   "scope": "`:cdo`/`:cfdo`/`:ldo`/`:lfdo`, error abort, buffer loading policy, modified buffers, progress reporting."
+  },
+  {
+   "id": "QF-07",
+   "area": "QF",
+   "area_name": "Quickfix and location lists",
+   "title": "Quickfix presentation and callbacks",
+   "phase": "P2",
+   "complexity": "M",
+   "deps": [
+    "QF-03",
+    "VIML-16"
+   ],
+   "scope": "`'quickfixtextfunc'`, qf syntax highlighting, `QuickFixLine`, cursor/statusline integration and quickfix event payloads."
+  },
+  {
+   "id": "QF-08",
+   "area": "QF",
+   "area_name": "Quickfix and location lists",
+   "title": "Compiler plugin runtime",
+   "phase": "P2",
+   "complexity": "M",
+   "deps": [
+    "QF-05",
+    "RT-07"
+   ],
+   "scope": "`:compiler`/`:compiler!`, `compiler/*.vim` loading, `:make` integration, `b:current_compiler`, `after/compiler`."
+  },
+  {
+   "id": "TAG-01",
+   "area": "TAG",
+   "area_name": "Tags and help",
+   "title": "Tag file parser and search",
+   "phase": "P1",
+   "complexity": "M",
+   "deps": [
+    "FND-07"
+   ],
+   "scope": "`tags` format, sorted/binary search, duplicate tags, `'tags'`/`'tagrelative'`/`'taglength'`/`'showfulltag'`/`'tagsecure'` (reject URL file fields with E1576), Emacs tags optional, encoding and caching."
+  },
+  {
+   "id": "TAG-02",
+   "area": "TAG",
+   "area_name": "Tags and help",
+   "title": "Tag commands and stack",
+   "phase": "P1",
+   "complexity": "L",
+   "deps": [
+    "TAG-01",
+    "WIN-01"
+   ],
+   "scope": "`:tag`/`:tselect`/`:tjump`/`:tnext`/`:tprev`/`:tfirst`/`:tlast`/`:trewind`/`:pop`, `CTRL-]`/`CTRL-t`/`g]`, tag stack, preview hooks, tag pattern execution."
+  },
+  {
+   "id": "TAG-03",
+   "area": "TAG",
+   "area_name": "Tags and help",
+   "title": "Tag scripting APIs",
+   "phase": "P2",
+   "complexity": "M",
+   "deps": [
+    "TAG-01",
+    "VIML-15"
+   ],
+   "scope": "`taglist()`/`tagfiles()`/`gettagstack()`/`settagstack()`, tag completion, `'tagfunc'` integration metadata."
+  },
+  {
+   "id": "TAG-04",
+   "area": "TAG",
+   "area_name": "Tags and help",
+   "title": "Tag function and ctags integration",
+   "phase": "P2",
+   "complexity": "M",
+   "deps": [
+    "TAG-02",
+    "VIML-16"
+   ],
+   "scope": "`'tagfunc'` callback, `taglist()` fallback, ctags invocation guidance, async tags, error handling when tags missing."
+  },
+  {
+   "id": "TAG-05",
+   "area": "TAG",
+   "area_name": "Tags and help",
+   "title": "Help buffer and navigation",
+   "phase": "P1",
+   "complexity": "L",
+   "deps": [
+    "TAG-01",
+    "BUF-09"
+   ],
+   "scope": "`:help`/`:h`, `'buftype=help'`, `'iskeyword'`/`'modifiable'`, bar-delimited tag links, `CTRL-]`/`CTRL-t`/`CTRL-o`, `:helpclose`, `'helpheight'`."
+  },
+  {
+   "id": "TAG-06",
+   "area": "TAG",
+   "area_name": "Tags and help",
+   "title": "Helptags generation and doc parsing",
+   "phase": "P1",
+   "complexity": "M",
+   "deps": [
+    "TAG-05",
+    "FND-07"
+   ],
+   "scope": "`:helptags` over `doc/*.txt`, `*tag*` extraction, duplicate/error reporting, `doc/tags` format, `:helptags ALL`."
+  },
+  {
+   "id": "TAG-07",
+   "area": "TAG",
+   "area_name": "Tags and help",
+   "title": "Keyword lookup",
+   "phase": "P1",
+   "complexity": "S",
+   "deps": [
+    "TAG-02",
+    "EX-08"
+   ],
+   "scope": "`K`/`'keywordprg'`, `g]` tag select, `CTRL-W ]`/`CTRL-W }`, `:ptag`/`:ptselect`, man page fallback, shell quoting."
+  },
+  {
+   "id": "TAG-08",
+   "area": "TAG",
+   "area_name": "Tags and help",
+   "title": "Help grep and search",
+   "phase": "P2",
+   "complexity": "M",
+   "deps": [
+    "TAG-05",
+    "QF-05"
+   ],
+   "scope": "`:helpgrep`, help error list, `:lhelpgrep`, match context, jump to tag and close help."
+  },
+  {
+   "id": "SPELL-01",
+   "area": "SPELL",
+   "area_name": "Spell checking",
+   "title": "Spell file reader",
+   "phase": "P3",
+   "complexity": "XL",
+   "deps": [
+    "FND-07"
+   ],
+   "scope": "Vim `.spl`/`.sug` binary formats (version 1/2), region/affix trees, word flags, case folding, memory-mapped loading, corruption diagnostics."
+  },
+  {
+   "id": "SPELL-02",
+   "area": "SPELL",
+   "area_name": "Spell checking",
+   "title": "Affix and word-list tooling",
+   "phase": "P3",
+   "complexity": "XL",
+   "deps": [
+    "SPELL-01"
+   ],
+   "scope": "`.aff`/`.dic` parsing, `:mkspell` writer compatible with Vim, compression, `:spelldump`, incremental updates, `spell/*.vim` tooling."
+  },
+  {
+   "id": "SPELL-03",
+   "area": "SPELL",
+   "area_name": "Spell checking",
+   "title": "Spell checker and suggestions",
+   "phase": "P3",
+   "complexity": "XL",
+   "deps": [
+    "SPELL-01",
+    "REGEX-06"
+   ],
+   "scope": "Bad-word detection, compound/region rules, suggestion generation/ranking, `'spellsuggest'`, `'spellcapcheck'`, `'spelloptions'`, performance bounds."
+  },
+  {
+   "id": "SPELL-04",
+   "area": "SPELL",
+   "area_name": "Spell checking",
+   "title": "Spell commands and options",
+   "phase": "P3",
+   "complexity": "L",
+   "deps": [
+    "SPELL-03",
+    "OPT-03"
+   ],
+   "scope": "`:spellgood`/`:spellwrong`/`:spellrare`/`:spellundo`, `zg/zw/zG/zW`, `'spelllang'`/`'spellfile'`/`'spell'`, per-window spelling."
+  },
+  {
+   "id": "SPELL-05",
+   "area": "SPELL",
+   "area_name": "Spell checking",
+   "title": "Spell display and navigation",
+   "phase": "P3",
+   "complexity": "M",
+   "deps": [
+    "SPELL-03",
+    "WIN-10"
+   ],
+   "scope": "`]s`/`[s`/`]S`/`[S`, `z=`/`1z=`, `SpellBad/SpellCap/SpellRare/SpellLocal` highlighting, insert-mode spell completion."
+  },
+  {
+   "id": "SPELL-06",
+   "area": "SPELL",
+   "area_name": "Spell checking",
+   "title": "Spell scripting API",
+   "phase": "P3",
+   "complexity": "M",
+   "deps": [
+    "SPELL-03",
+    "VIML-14"
+   ],
+   "scope": "`spellbadword()`/`spellsuggest()`/`soundfold()`, region/case arguments, guest language dictionaries."
+  },
+  {
+   "id": "SPELL-07",
+   "area": "SPELL",
+   "area_name": "Spell checking",
+   "title": "Spell in insert and syntax",
+   "phase": "P3",
+   "complexity": "M",
+   "deps": [
+    "SPELL-03",
+    "INS-05"
+   ],
+   "scope": "`'complete'` `kspell`, `:syn spell` options, spell checking in comments/strings, `'spell'` per buffer, performance under syntax."
+  },
+  {
+   "id": "SPELL-08",
+   "area": "SPELL",
+   "area_name": "Spell checking",
+   "title": "Runtime spell corpus tests",
+   "phase": "P3",
+   "complexity": "L",
+   "deps": [
+    "SPELL-01",
+    "TST-02"
+   ],
+   "scope": "Load every bundled `spell/*.spl`, compare bad-word/suggestion output with Vim, test `:mkspell` round-trip and malformed files."
+  },
+  {
+   "id": "JOB-01",
+   "area": "JOB",
+   "area_name": "Jobs, channels and timers",
+   "title": "Process spawn, pipes and PTYs",
+   "phase": "P3",
+   "complexity": "L",
+   "deps": [
+    "FND-07"
+   ],
+   "scope": "Nonblocking fork/exec, stdin/stdout/stderr pipes, PTY allocation, environment/cwd, process groups, reaping, zombie prevention, Windows abstraction."
+  },
+  {
+   "id": "JOB-02",
+   "area": "JOB",
+   "area_name": "Jobs, channels and timers",
+   "title": "Job options and callbacks",
+   "phase": "P3",
+   "complexity": "L",
+   "deps": [
+    "JOB-01",
+    "VIML-05"
+   ],
+   "scope": "`job_start()` options (`in_io`, `out_io`, `err_io`, `out_mode`, `err_mode`, `pty`, `noblock`, `timeout`, `stoponexit`, `cwd`, `env`, `clear_env`, `waittime`, callback/close/exit/out/err), `job_status()`/`job_info()`/`job_stop()`/`job_setoptions()`/`job_getchannel()`."
+  },
+  {
+   "id": "JOB-03",
+   "area": "JOB",
+   "area_name": "Jobs, channels and timers",
+   "title": "Channels",
+   "phase": "P3",
+   "complexity": "L",
+   "deps": [
+    "JOB-01",
+    "FND-03"
+   ],
+   "scope": "`ch_open()` raw/JSON/nl/lsp modes, `ch_listen()` server-side loopback/Unix channels with accept callback, `--stdio-channel` and the `stdio` address (channel startup, not an Ex-mode compatibility layer), TCP IPv4/IPv6 and Unix sockets, `ch_sendraw()`/`ch_sendexpr()`/`ch_evalexpr()`/`ch_evalraw()`/`ch_read()`/`ch_readraw()`/`ch_readblob()`/`ch_close()`/`ch_status()`/`ch_info()`/`ch_getbufnr()`/`ch_getjob()`, callbacks and timeouts, `ch_log()`."
+  },
+  {
+   "id": "JOB-04",
+   "area": "JOB",
+   "area_name": "Jobs, channels and timers",
+   "title": "Timers",
+   "phase": "P2",
+   "complexity": "M",
+   "deps": [
+    "FND-03"
+   ],
+   "scope": "`timer_start()`/`timer_stop()`/`timer_pause()`/`timer_info()`, repeat counts, paused timers, timer callbacks and errors, `'updatetime'`/`:sleep` integration."
+  },
+  {
+   "id": "JOB-05",
+   "area": "JOB",
+   "area_name": "Jobs, channels and timers",
+   "title": "Build and grep plumbing",
+   "phase": "P3",
+   "complexity": "M",
+   "deps": [
+    "JOB-01",
+    "EX-08",
+    "QF-05"
+   ],
+   "scope": "`:make`/`:grep` async execution, `'shellpipe'`, `QuickFixCmdPre/Post`, output capture, exit status, cancellation, no shell injection."
+  },
+  {
+   "id": "JOB-06",
+   "area": "JOB",
+   "area_name": "Jobs, channels and timers",
+   "title": "Prompt buffers",
+   "phase": "P3",
+   "complexity": "M",
+   "deps": [
+    "JOB-03",
+    "BUF-09"
+   ],
+   "scope": "`prompt_setprompt()`/`prompt_setcallback()`/`prompt_setinterrupt()`/`prompt_getprompt()`, `'buftype=prompt'`, editable input, callback cancellation, channel wiring."
+  },
+  {
+   "id": "JOB-07",
+   "area": "JOB",
+   "area_name": "Jobs, channels and timers",
+   "title": "Wait, signals and shutdown",
+   "phase": "P3",
+   "complexity": "M",
+   "deps": [
+    "JOB-02"
+   ],
+   "scope": "`wait()`, `job_stop()` signals, `:sleep` interruptibility, shutdown order (jobs, channels, PTYs), timeout and orphan prevention."
+  },
+  {
+   "id": "JOB-08",
+   "area": "JOB",
+   "area_name": "Jobs, channels and timers",
+   "title": "Client-server and remote control",
+   "phase": "P4",
+   "complexity": "L",
+   "deps": [
+    "JOB-03"
+   ],
+   "scope": "`--servername`/`--remote*`, `serverlist()`/`remote_expr()`/`remote_send()`/`remote_peek()`, X11/socket transport, `+clientserver` honesty; optional platform feature."
+  },
+  {
+   "id": "JS-01",
+   "area": "JS",
+   "area_name": "QuickJS integration",
+   "title": "QuickJS engine embedding",
+   "phase": "P3",
+   "complexity": "L",
+   "deps": [
+    "FND-01"
+   ],
+   "scope": "quickjs-ng (or maintained fork) vendored build behind a `quickjs` Cargo feature, reproducible build, macOS/Linux targets, no runtime dependency on a system library."
+  },
+  {
+   "id": "JS-02",
+   "area": "JS",
+   "area_name": "QuickJS integration",
+   "title": "Runtime lifecycle, limits and interrupts",
+   "phase": "P3",
+   "complexity": "M",
+   "deps": [
+    "JS-01",
+    "FND-03"
+   ],
+   "scope": "One runtime/context per editor, create/destroy ordering, memory limit, max stack, `setInterruptHandler` tied to `got_int`, no JS execution on background threads."
+  },
+  {
+   "id": "JS-03",
+   "area": "JS",
+   "area_name": "QuickJS integration",
+   "title": "`:js`, `:jsdo` and `:jsfile`",
+   "phase": "P3",
+   "complexity": "M",
+   "deps": [
+    "JS-02",
+    "RT-04"
+   ],
+   "scope": "Evaluate expressions/statements, range command, file source with script IDs, errors with file/line, `:jsversion`, no implicit global leakage between files."
+  },
+  {
+   "id": "JS-04",
+   "area": "JS",
+   "area_name": "QuickJS integration",
+   "title": "`vim` global API",
+   "phase": "P3",
+   "complexity": "L",
+   "deps": [
+    "JS-03",
+    "VIML-11"
+   ],
+   "scope": "`vim.cmd()` (string or array), `vim.eval()`, `vim.fn.name(...)` dynamic proxies, `vim.call()`, `vim.api.*` typed calls, `vim.g/b/w/t/v` proxies, `vim.version`, `vim.in_fast_event()`, `vim.notify()`."
+  },
+  {
+   "id": "JS-05",
+   "area": "JS",
+   "area_name": "QuickJS integration",
+   "title": "Type conversion and function bridge",
+   "phase": "P3",
+   "complexity": "L",
+   "deps": [
+    "JS-02",
+    "VIML-01"
+   ],
+   "scope": "Number/BigInt bounds, string/NUL, Array/List, Object/Dict, Uint8Array/Blob, null/undefined/Special, JS function to `Funcref` persistent handle, Vim funcref to JS callable, rooting across both GCs, deep-copy boundary."
+  },
+  {
+   "id": "JS-06",
+   "area": "JS",
+   "area_name": "QuickJS integration",
+   "title": "Module loader",
+   "phase": "P3",
+   "complexity": "L",
+   "deps": [
+    "JS-03",
+    "RT-01"
+   ],
+   "scope": "ES modules, `import` resolution from `$VIMRUNTIME/js/`, `<rtp>/js/`, relative paths and `pack/*/start/*/js/`, deterministic resolver, cache by resolved path, no `node_modules`."
+  },
+  {
+   "id": "JS-07",
+   "area": "JS",
+   "area_name": "QuickJS integration",
+   "title": "JS plugins and autoload",
+   "phase": "P3",
+   "complexity": "M",
+   "deps": [
+    "JS-06",
+    "RT-03"
+   ],
+   "scope": "Source `plugin/**/*.js` in runtimepath order, `g:loaded_<name>` guard convention, `:jsfile` entry points and modules, `has('quickjs')`, load only when the feature is compiled in."
+  },
+  {
+   "id": "JS-08",
+   "area": "JS",
+   "area_name": "QuickJS integration",
+   "title": "Promises, microtasks and event loop",
+   "phase": "P3",
+   "complexity": "L",
+   "deps": [
+    "JS-02",
+    "JOB-04"
+   ],
+   "scope": "Drain QuickJS job queue after callbacks/commands, resolve promises from timer/job callbacks, `vim.defer()` scheduling, no blocking `await` on the main thread, shutdown drains safely."
+  },
+  {
+   "id": "JS-09",
+   "area": "JS",
+   "area_name": "QuickJS integration",
+   "title": "Errors, exceptions and console",
+   "phase": "P3",
+   "complexity": "M",
+   "deps": [
+    "JS-03",
+    "MSG-01"
+   ],
+   "scope": "JS throw to Vim exception (`v:exception`/`v:throwpoint`), Vim error to JS `Error` with E code, stack traces, `console.log/info/warn/error` to messages, `vim.notify()` levels."
+  },
+  {
+   "id": "JS-10",
+   "area": "JS",
+   "area_name": "QuickJS integration",
+   "title": "VimL-to-JS bridge functions",
+   "phase": "P3",
+   "complexity": "M",
+   "deps": [
+    "JS-05",
+    "VIML-14"
+   ],
+   "scope": "`js_eval()`, `js_call()`, `js_function()`, `js_version()`, conversion errors, reentrancy guard, callbacks from `timer_start()`/`job_start()`."
+  },
+  {
+   "id": "JS-11",
+   "area": "JS",
+   "area_name": "QuickJS integration",
+   "title": "Sandbox and restricted mode",
+   "phase": "P3",
+   "complexity": "M",
+   "deps": [
+    "JS-06",
+    "SEC-01"
+   ],
+   "scope": "No `std`/`os` modules by default, module allowlist, no direct filesystem/process access except through Vim APIs, `:sandbox`/`-Z` enforcement, memory/stack limits."
+  },
+  {
+   "id": "JS-12",
+   "area": "JS",
+   "area_name": "QuickJS integration",
+   "title": "JS conformance and performance tests",
+   "phase": "P3",
+   "complexity": "M",
+   "deps": [
+    "JS-08",
+    "TST-01"
+   ],
+   "scope": "ES2023 subset tests (test262 selections), API contract tests, promise/job interleaving, memory-limit and interrupt tests, startup and call overhead benchmarks."
+  },
+  {
+   "id": "RT-01",
+   "area": "RT",
+   "area_name": "Vim runtime compatibility",
+   "title": "`'runtimepath'` discovery and order",
+   "phase": "P1",
+   "complexity": "L",
+   "deps": [
+    "FND-07"
+   ],
+   "scope": "Unix/macOS/Windows defaults, `$VIMRUNTIME`/`$VIM`, user config dirs, `after/` last, `:set rtp` parsing, path normalization and escaping."
+  },
+  {
+   "id": "RT-02",
+   "area": "RT",
+   "area_name": "Vim runtime compatibility",
+   "title": "`:runtime` and `:runtime!`",
+   "phase": "P1",
+   "complexity": "M",
+   "deps": [
+    "RT-01"
+   ],
+   "scope": "Glob expansion, all-matches ordering, `after` semantics, missing-file errors, `:runtime` with `!`, source errors with script attribution."
+  },
+  {
+   "id": "RT-03",
+   "area": "RT",
+   "area_name": "Vim runtime compatibility",
+   "title": "Plugin and package loading",
+   "phase": "P2",
+   "complexity": "L",
+   "deps": [
+    "RT-02",
+    "EX-02"
+   ],
+   "scope": "`plugin/**/*.vim` ordering, `pack/*/start`, `pack/*/opt`, `:packadd`/`:packadd!`/`:packloadall`, `'packpath'`, load guards, `:scriptnames` visibility."
+  },
+  {
+   "id": "RT-04",
+   "area": "RT",
+   "area_name": "Vim runtime compatibility",
+   "title": "Sourcing and script identity",
+   "phase": "P1",
+   "complexity": "M",
+   "deps": [
+    "EX-01",
+    "FND-07"
+   ],
+   "scope": "`:source`, script IDs, `:scriptnames`, `<sfile>`/`<slnum>`/`<stack>`, `:finish`, nested source, error line mapping, BOM/shebang handling."
+  },
+  {
+   "id": "RT-05",
+   "area": "RT",
+   "area_name": "Vim runtime compatibility",
+   "title": "Filetype detection",
+   "phase": "P1",
+   "complexity": "L",
+   "deps": [
+    "RT-02"
+   ],
+   "scope": "`filetype.vim`/`scripts.vim` loading, `:setf`/`:setfiletype`, `'filetype'`, extension/pattern/shebang detection, `BufNewFile/BufRead` ordering, `:filetype on/off`."
+  },
+  {
+   "id": "RT-06",
+   "area": "RT",
+   "area_name": "Vim runtime compatibility",
+   "title": "ftplugin and indent loading",
+   "phase": "P2",
+   "complexity": "L",
+   "deps": [
+    "RT-05",
+    "VIML-04"
+   ],
+   "scope": "`ftplugin/<ft>.vim`/`ftplugin/<ft>_*.vim`, `indent/<ft>.vim`, `b:did_ftplugin`/`b:did_indent`, `b:undo_ftplugin`/`b:undo_indent`, `:filetype plugin indent on`."
+  },
+  {
+   "id": "RT-07",
+   "area": "RT",
+   "area_name": "Vim runtime compatibility",
+   "title": "Syntax, colors, compiler and keymap loading",
+   "phase": "P2",
+   "complexity": "L",
+   "deps": [
+    "RT-05",
+    "SYN-08"
+   ],
+   "scope": "`syntax/<ft>.vim` via `Syntax`, `colors/<name>.vim`, `compiler/<name>.vim`, `keymap/<name>.vim`, `after/` overrides, load ordering and failure isolation."
+  },
+  {
+   "id": "RT-08",
+   "area": "RT",
+   "area_name": "Vim runtime compatibility",
+   "title": "Defaults and startup modes",
+   "phase": "P1",
+   "complexity": "M",
+   "deps": [
+    "RT-01",
+    "OPT-05"
+   ],
+   "scope": "`defaults.vim`, `vimrc_example.vim`, `-u NONE`/`-u NORC`/`-u DEFAULTS`, `--clean`, `--noplugin`, `vimrc`/`gvimrc` order, `v:vim_did_enter` and `VimEnter`."
+  },
+  {
+   "id": "RT-09",
+   "area": "RT",
+   "area_name": "Vim runtime compatibility",
+   "title": "Runtime documentation and tags",
+   "phase": "P1",
+   "complexity": "M",
+   "deps": [
+    "RT-01",
+    "TAG-06"
+   ],
+   "scope": "`doc/tags`, `:help` on shipped docs, `'helplang'`, doc file encoding, `:helptags` regeneration, missing-tag diagnostics."
+  },
+  {
+   "id": "RT-10",
+   "area": "RT",
+   "area_name": "Vim runtime compatibility",
+   "title": "Runtime smoke harness",
+   "phase": "P2",
+   "complexity": "L",
+   "deps": [
+    "RT-03",
+    "TST-01",
+    "VIML-10"
+   ],
+   "scope": "Source plugins/autoloads in isolated processes, record errors/`v:errmsg`, classify expected GUI/Vim9 gaps, produce per-file report and regression diff."
+  },
+  {
+   "id": "RT-11",
+   "area": "RT",
+   "area_name": "Vim runtime compatibility",
+   "title": "Compatibility tiers and matrix",
+   "phase": "P1",
+   "complexity": "M",
+   "deps": [
+    "RT-01"
+   ],
+   "scope": "Tier A (core editing/help/syntax), Tier B (common plugins/languages), Tier C (everything), explicit gap list, CI dashboard and release gate."
+  },
+  {
+   "id": "RT-12",
+   "area": "RT",
+   "area_name": "Vim runtime compatibility",
+   "title": "Vim9 runtime skip policy",
+   "phase": "P2",
+   "complexity": "M",
+   "deps": [
+    "RT-02",
+    "EX-01"
+   ],
+   "scope": "Detect `vim9script` headers (including `noclear`), skip with a single verbose warning by default, `--vim9=error` mode, `has('vim9script')` honesty, inventory of skipped files."
+  },
+  {
+   "id": "RT-13",
+   "area": "RT",
+   "area_name": "Vim runtime compatibility",
+   "title": "Runtime pinning, update and licensing",
+   "phase": "P1",
+   "complexity": "S",
+   "deps": [
+    "FND-01"
+   ],
+   "scope": "Pin Vim 9.2.1338 as a vendored subtree or downloaded artifact, `runtime.lock` tag/archive SHA-256, checksum, Vim license notices, reproducible update script, no local patches to runtime files."
+  },
+  {
+   "id": "RT-14",
+   "area": "RT",
+   "area_name": "Vim runtime compatibility",
+   "title": "Common runtime plugin subset",
+   "phase": "P3",
+   "complexity": "L",
+   "deps": [
+    "RT-06",
+    "TAG-05"
+   ],
+   "scope": "`matchparen`, `matchit`, `netrw` core, `spellfile`, `tar`/`zip`/`gzip`, `vimball`, `tohtml`; feature-gate or defer individual plugins with documented gaps."
+  },
+  {
+   "id": "RT-15",
+   "area": "RT",
+   "area_name": "Vim runtime compatibility",
+   "title": "Menu, option and legacy scripts",
+   "phase": "P3",
+   "complexity": "M",
+   "deps": [
+    "EX-12",
+    "RT-07",
+    "OPT-08"
+   ],
+   "scope": "`menu.vim`, `synmenu.vim`, `optwin.vim`, `mswin.vim`, `evim.vim`, `delmenu.vim`; TUI-safe fallbacks, no GUI assumptions, `'guioptions'` ignored honestly."
+  },
+  {
+   "id": "RT-16",
+   "area": "RT",
+   "area_name": "Vim runtime compatibility",
+   "title": "Keymap runtime",
+   "phase": "P3",
+   "complexity": "M",
+   "deps": [
+    "ENC-05",
+    "EX-01"
+   ],
+   "scope": "`:loadkeymap`, `keymap/*.vim` syntax, `'keymap'`, insert/cmdline translation, `'iminsert'`/`'imsearch'`, load errors."
+  },
+  {
+   "id": "RT-17",
+   "area": "RT",
+   "area_name": "Vim runtime compatibility",
+   "title": "Language and menu translations",
+   "phase": "P3",
+   "complexity": "M",
+   "deps": [
+    "MSG-04",
+    "RT-01"
+   ],
+   "scope": "`lang/*.vim`/`.mo` lookup, `:language`, `'langmenu'`, `:menutranslate`, `v:lang`, fallback to English, encoding."
+  },
+  {
+   "id": "RT-18",
+   "area": "RT",
+   "area_name": "Vim runtime compatibility",
+   "title": "Runtime test-suite adaptation",
+   "phase": "P2",
+   "complexity": "XL",
+   "deps": [
+    "TST-02",
+    "RT-10"
+   ],
+   "scope": "Port selected Vim `src/testdir` tests to the headless driver, classify unsupported (GUI/Vim9/Vi) cases, run per-commit with a compatibility score."
+  },
+  {
+   "id": "ENC-01",
+   "area": "ENC",
+   "area_name": "Encoding and multibyte text",
+   "title": "UTF-8 internal model",
+   "phase": "P0",
+   "complexity": "L",
+   "deps": [
+    "FND-02"
+   ],
+   "scope": "Byte strings, char boundaries, char/byte index conversion, invalid byte preservation, NUL-in-string handling, `strchars()`/`charidx()`/`byteidx()` semantics."
+  },
+  {
+   "id": "ENC-02",
+   "area": "ENC",
+   "area_name": "Encoding and multibyte text",
+   "title": "File encodings and conversion",
+   "phase": "P1",
+   "complexity": "L",
+   "deps": [
+    "ENC-01",
+    "BUF-03"
+   ],
+   "scope": "`'fileencoding'`/`'fileencodings'`, UTF-8/UTF-16/UTF-32/Latin-1, BOM detection, iconv integration, replacement/error policy, `:scriptencoding`."
+  },
+  {
+   "id": "ENC-03",
+   "area": "ENC",
+   "area_name": "Encoding and multibyte text",
+   "title": "Unicode display width",
+   "phase": "P1",
+   "complexity": "L",
+   "deps": [
+    "ENC-01",
+    "UI-01"
+   ],
+   "scope": "East Asian width, ambiguous-width option, emoji presentation, variation selectors, combining marks, grapheme clusters in cells, `'delcombine'`."
+  },
+  {
+   "id": "ENC-04",
+   "area": "ENC",
+   "area_name": "Encoding and multibyte text",
+   "title": "Character classes and case folding",
+   "phase": "P1",
+   "complexity": "L",
+   "deps": [
+    "ENC-01",
+    "OPT-03"
+   ],
+   "scope": "`'iskeyword'`/`'isident'`/`'isprint'`/`'isfname'`, `\\k`/`\\i` classes, Unicode case folding, `'ignorecase'`/`'smartcase'`, locale collation basics."
+  },
+  {
+   "id": "ENC-05",
+   "area": "ENC",
+   "area_name": "Encoding and multibyte text",
+   "title": "Input methods and keymaps",
+   "phase": "P2",
+   "complexity": "M",
+   "deps": [
+    "ENC-01"
+   ],
+   "scope": "Digraphs, `:loadkeymap`, `'keymap'`, `'iminsert'`/`'imsearch'`, keymap file format, IME commit/preedit path for future GUI; language mappings are MAP-06."
+  },
+  {
+   "id": "ENC-06",
+   "area": "ENC",
+   "area_name": "Encoding and multibyte text",
+   "title": "Cell width overrides and display APIs",
+   "phase": "P2",
+   "complexity": "M",
+   "deps": [
+    "ENC-03"
+   ],
+   "scope": "`setcellwidths()`/`getcellwidths()`, `strdisplaywidth()`/`virtcol()`/`virtcol2col()`, `ga`/`g8` character info, tab expansion, `'ambiwidth'`/`'emoji'`, screen column conversions."
+  },
+  {
+   "id": "ENC-07",
+   "area": "ENC",
+   "area_name": "Encoding and multibyte text",
+   "title": "Locale and language variables",
+   "phase": "P3",
+   "complexity": "M",
+   "deps": [
+    "FND-07",
+    "MSG-04"
+   ],
+   "scope": "`v:ctype`/`v:lang`/`v:lc_time`/`v:collate`, `:language`, message translation hooks, no dependence on process locale for internal encoding."
+  },
+  {
+   "id": "ENC-08",
+   "area": "ENC",
+   "area_name": "Encoding and multibyte text",
+   "title": "Invalid bytes and display fallback",
+   "phase": "P2",
+   "complexity": "M",
+   "deps": [
+    "ENC-01",
+    "UI-01"
+   ],
+   "scope": "`'display'` uhex, replacement glyphs, non-printable notation, truncation at boundaries, no panics on malformed input."
+  },
+  {
+   "id": "CRYPT-01",
+   "area": "CRYPT",
+   "area_name": "Encryption",
+   "title": "Vim-compatible file encryption",
+   "phase": "P3",
+   "complexity": "M",
+   "deps": [
+    "BUF-03"
+   ],
+   "scope": "`'cryptmethod'` zip/blowfish/blowfish2, key derivation/IV/block format, detection of encrypted files, random source, constant-time comparison, streaming."
+  },
+  {
+   "id": "CRYPT-02",
+   "area": "CRYPT",
+   "area_name": "Encryption",
+   "title": "Encryption commands and prompts",
+   "phase": "P3",
+   "complexity": "M",
+   "deps": [
+    "CRYPT-01",
+    "CMD-06"
+   ],
+   "scope": "`:X`, `'key'`, `:set key=` to clear, confirmation prompts, key caching, no key in history/messages, `v:swapchoice` implications."
+  },
+  {
+   "id": "CRYPT-03",
+   "area": "CRYPT",
+   "area_name": "Encryption",
+   "title": "Encrypted swap and undo",
+   "phase": "P3",
+   "complexity": "M",
+   "deps": [
+    "CRYPT-01",
+    "BUF-06"
+   ],
+   "scope": "Encrypt swap and persistent undo with the same key, no plaintext temp files, cleanup on key change, recovery flow."
+  },
+  {
+   "id": "CRYPT-04",
+   "area": "CRYPT",
+   "area_name": "Encryption",
+   "title": "Cryptography test vectors",
+   "phase": "P3",
+   "complexity": "M",
+   "deps": [
+    "CRYPT-01",
+    "TST-01"
+   ],
+   "scope": "Known-answer vectors, interop with Vim-generated files, wrong-key/corruption tests, fuzzing of decrypt paths."
+  },
+  {
+   "id": "SEC-01",
+   "area": "SEC",
+   "area_name": "Security, sandbox and limits",
+   "title": "Restricted mode and sandbox",
+   "phase": "P2",
+   "complexity": "M",
+   "deps": [
+    "EX-01",
+    "FND-07"
+   ],
+   "scope": "`-Z`, `:sandbox`, `'secure'`, blocked commands (`:!`, `:write` to other files, `system()`), error messages, per-command trust state."
+  },
+  {
+   "id": "SEC-02",
+   "area": "SEC",
+   "area_name": "Security, sandbox and limits",
+   "title": "Modeline and exrc restrictions",
+   "phase": "P1",
+   "complexity": "M",
+   "deps": [
+    "OPT-06"
+   ],
+   "scope": "`'modeline'`/`'modelines'`/`'secure'`, allowlisted options, `'exrc'`, `:set exrc`, sandboxed modeline execution, no shell expansion."
+  },
+  {
+   "id": "SEC-03",
+   "area": "SEC",
+   "area_name": "Security, sandbox and limits",
+   "title": "Shell invocation and quoting",
+   "phase": "P1",
+   "complexity": "L",
+   "deps": [
+    "EX-08"
+   ],
+   "scope": "`'shell'`/`'shellcmdflag'`/`'shellquote'`/`'shellredir'`/`'shellxquote'`/`'shellslash'`/`'shelltemp'`, argument construction, injection tests, temp-file permissions."
+  },
+  {
+   "id": "SEC-04",
+   "area": "SEC",
+   "area_name": "Security, sandbox and limits",
+   "title": "Resource limits and timeouts",
+   "phase": "P2",
+   "complexity": "M",
+   "deps": [
+    "REGEX-08",
+    "VIML-01"
+   ],
+   "scope": "`'maxfuncdepth'`/`'maxmapdepth'`/`'maxmempattern'`, regex step budget, script recursion, memory ceilings, graceful `E` errors."
+  },
+  {
+   "id": "SEC-05",
+   "area": "SEC",
+   "area_name": "Security, sandbox and limits",
+   "title": "QuickJS sandbox",
+   "phase": "P3",
+   "complexity": "M",
+   "deps": [
+    "JS-11"
+   ],
+   "scope": "No std/os modules, no arbitrary file/process access, module allowlist, `:sandbox` enforcement through `vim` API, memory/stack limits."
+  },
+  {
+   "id": "SEC-06",
+   "area": "SEC",
+   "area_name": "Security, sandbox and limits",
+   "title": "Untrusted plugin containment",
+   "phase": "P3",
+   "complexity": "M",
+   "deps": [
+    "SEC-01",
+    "AUC-05"
+   ],
+   "scope": "Autocommand/mapping trust model, `:sandbox` propagation into callbacks, clear diagnostics, no privilege escalation through modelines or tags."
+  },
+  {
+   "id": "TST-01",
+   "area": "TST",
+   "area_name": "Testing and quality",
+   "title": "Unit and integration harness",
+   "phase": "P0",
+   "complexity": "M",
+   "deps": [
+    "FND-06"
+   ],
+   "scope": "Test fixtures, in-memory editor, key injection, Ex runner, assertions for text/registers/options/messages, deterministic time and randomness."
+  },
+  {
+   "id": "TST-02",
+   "area": "TST",
+   "area_name": "Testing and quality",
+   "title": "Vim oracle and differential tests",
+   "phase": "P2",
+   "complexity": "L",
+   "deps": [
+    "TST-01"
+   ],
+   "scope": "Spawn pinned Vim in headless mode, canonicalize output, compare buffer/cursor/registers/messages; skip documented version/feature gaps; golden corpus stored as text."
+  },
+  {
+   "id": "TST-03",
+   "area": "TST",
+   "area_name": "Testing and quality",
+   "title": "Frame golden tests",
+   "phase": "P1",
+   "complexity": "M",
+   "deps": [
+    "UI-12",
+    "TST-01"
+   ],
+   "scope": "80x24 and 120x40 snapshots, cell attributes, cursor position, wide chars, popup menu, statusline/tabline/cmdline; update tooling with review."
+  },
+  {
+   "id": "TST-04",
+   "area": "TST",
+   "area_name": "Testing and quality",
+   "title": "Fuzzing",
+   "phase": "P2",
+   "complexity": "L",
+   "deps": [
+    "TST-01"
+   ],
+   "scope": "cargo-fuzz for regex parser/VM, Ex parser, VimL parser/GC, input decoder, modeline, undo, JS bridge; corpus minimization and CI smoke."
+  },
+  {
+   "id": "TST-05",
+   "area": "TST",
+   "area_name": "Testing and quality",
+   "title": "Runtime compatibility dashboard",
+   "phase": "P2",
+   "complexity": "L",
+   "deps": [
+    "RT-11",
+    "TST-02"
+   ],
+   "scope": "Per-file pass/fail for plugins, ftplugins, indents, syntax, colors, compilers; trend charts; block release on regressions."
+  },
+  {
+   "id": "TST-06",
+   "area": "TST",
+   "area_name": "Testing and quality",
+   "title": "Performance benchmarks",
+   "phase": "P2",
+   "complexity": "M",
+   "deps": [
+    "FND-08"
+   ],
+   "scope": "Startup, 1MB/100MB file open, insert at start/end, scroll, syntax redraw, regex, undo depth, JS call overhead; budgets and regression thresholds."
+  },
+  {
+   "id": "TST-07",
+   "area": "TST",
+   "area_name": "Testing and quality",
+   "title": "Vim test-suite adaptation",
+   "phase": "P2",
+   "complexity": "XL",
+   "deps": [
+    "TST-02"
+   ],
+   "scope": "Port selected `src/testdir` tests; classify GUI/Vim9/Vi/Nvim gaps; harness translation for `:redir` and assert functions."
+  },
+  {
+   "id": "TST-08",
+   "area": "TST",
+   "area_name": "Testing and quality",
+   "title": "Security and DoS tests",
+   "phase": "P3",
+   "complexity": "M",
+   "deps": [
+    "SEC-04",
+    "TST-04"
+   ],
+   "scope": "Regex bombs, deep recursion, huge modelines, malicious tags/help, input escape floods, JS memory exhaustion, timeout guarantees."
+  },
+  {
+   "id": "MISC-01",
+   "area": "MISC",
+   "area_name": "Platform and optional features",
+   "title": "Right-to-left and Arabic shaping",
+   "phase": "P4",
+   "complexity": "L",
+   "deps": [
+    "ENC-03",
+    "WIN-10"
+   ],
+   "scope": "`'rightleft'`/`'rightleftcmd'`, Hebrew/Arabic shaping, bidi cursor movement, display reordering; optional, clearly gated."
+  },
+  {
+   "id": "MISC-02",
+   "area": "MISC",
+   "area_name": "Platform and optional features",
+   "title": "Printing and `:hardcopy`",
+   "phase": "P4",
+   "complexity": "L",
+   "deps": [
+    "BUF-03",
+    "UI-01"
+   ],
+   "scope": "`:hardcopy`, `'printoptions'`/`'printdevice'`/`'printexpr'`/`'printheader'`/`'printfont'`/`'printencoding'`, PostScript/PDF pipeline, platform print dialogs absent."
+  },
+  {
+   "id": "MISC-03",
+   "area": "MISC",
+   "area_name": "Platform and optional features",
+   "title": "Client-server",
+   "phase": "P4",
+   "complexity": "L",
+   "deps": [
+    "JOB-08"
+   ],
+   "scope": "X11/Unix-socket remote commands, `--remote*`, `serverlist()`/`remote_expr()`, `+clientserver` honesty; optional."
+  },
+  {
+   "id": "MISC-04",
+   "area": "MISC",
+   "area_name": "Platform and optional features",
+   "title": "NetBeans and Sun Workshop",
+   "phase": "P4",
+   "complexity": "S",
+   "deps": [],
+   "scope": "Legacy integrations explicitly unsupported; `has('netbeans_intg')` false, commands error with a clear message."
+  },
+  {
+   "id": "MISC-05",
+   "area": "MISC",
+   "area_name": "Platform and optional features",
+   "title": "Sound",
+   "phase": "P4",
+   "complexity": "S",
+   "deps": [
+    "FND-07"
+   ],
+   "scope": "`sound_playfile()`/`sound_clear()`, `+sound` gating, no failure when audio unavailable."
+  },
+  {
+   "id": "MISC-06",
+   "area": "MISC",
+   "area_name": "Platform and optional features",
+   "title": "Title, icon and toolbar options",
+   "phase": "P2",
+   "complexity": "S",
+   "deps": [
+    "UI-05",
+    "OPT-01"
+   ],
+   "scope": "`'title'`, `'titleold'`, `'titlestring'`, `'icon'`/`'iconstring'`, `'toolbar'`/`'toolbariconsize'` stored; GUI-only parts inert in TUI."
+  },
+  {
+   "id": "MISC-07",
+   "area": "MISC",
+   "area_name": "Platform and optional features",
+   "title": "Terminfo/termcap fallback",
+   "phase": "P1",
+   "complexity": "M",
+   "deps": [
+    "UI-05"
+   ],
+   "scope": "`-T`, `'term'`, terminfo database lookup, builtin xterm fallback, missing-capability diagnostics, `:set termcap`."
+  },
+  {
+   "id": "MISC-08",
+   "area": "MISC",
+   "area_name": "Platform and optional features",
+   "title": "Platform quirks",
+   "phase": "P4",
+   "complexity": "M",
+   "deps": [
+    "FND-07"
+   ],
+   "scope": "macOS option-key handling, Windows ConPTY/path/drive semantics, Linux console mouse, WSL, Android/Termux detection, exit codes and signal names."
+  },
+  {
+   "id": "MISC-09",
+   "area": "MISC",
+   "area_name": "Platform and optional features",
+   "title": "Startup timing and diagnostics",
+   "phase": "P1",
+   "complexity": "S",
+   "deps": [
+    "FND-09"
+   ],
+   "scope": "`--startuptime` output, `--cmd`/`-c` ordering, crash log location, `-V` verbose levels."
+  },
+  {
+   "id": "MISC-10",
+   "area": "MISC",
+   "area_name": "Platform and optional features",
+   "title": "Translation and gettext",
+   "phase": "P3",
+   "complexity": "M",
+   "deps": [
+    "MSG-04"
+   ],
+   "scope": "Message catalog lookup, `:language`, `$LANG`, plural forms, untranslated fallback, no encoding mismatches."
+  },
+  {
+   "id": "MISC-11",
+   "area": "MISC",
+   "area_name": "Platform and optional features",
+   "title": "Version and feature matrix",
+   "phase": "P1",
+   "complexity": "S",
+   "deps": [
+    "FND-04"
+   ],
+   "scope": "`:version`/`--version`, `has()` table, patch level `v:versionlong`, honest false values for GUI/Vim9/unsupported features, including `statusline_click`, `image*`, `android` and `termux`."
+  },
+  {
+   "id": "MISC-12",
+   "area": "MISC",
+   "area_name": "Platform and optional features",
+   "title": "Images and image protocols",
+   "phase": "P4",
+   "complexity": "L",
+   "deps": [
+    "DSP-07",
+    "UI-02",
+    "UI-13"
+   ],
+   "scope": "Optional `+image`: `image_add()`/`image_info()`/`image_discard()`, popup `image` attribute, `'imageprotocol'` sixel/kitty, `v:imagebackend`, `getbgcolor()`, `has('image*')` reporting; deferred, default build reports false and rejects image attributes with a clear error."
+  },
+  {
+   "id": "VIM9-01",
+   "area": "VIM9",
+   "area_name": "Deferred Vim9 script",
+   "title": "`vim9script` syntax and semantics",
+   "phase": "P4",
+   "complexity": "XL",
+   "deps": [
+    "VIML-18",
+    "RT-12"
+   ],
+   "scope": "Script header, `:var`/`:final`/`:const`, expression syntax, type inference, whitespace rules, `:legacy`/`:vim9cmd` modifiers."
+  },
+  {
+   "id": "VIM9-02",
+   "area": "VIM9",
+   "area_name": "Deferred Vim9 script",
+   "title": "Compiled `:def` functions",
+   "phase": "P4",
+   "complexity": "XL",
+   "deps": [
+    "VIM9-01"
+   ],
+   "scope": "`:def`/`:enddef`, argument/return types, compiled execution, `:defcompile`, `:disassemble`, performance targets."
+  },
+  {
+   "id": "VIM9-03",
+   "area": "VIM9",
+   "area_name": "Deferred Vim9 script",
+   "title": "Classes, interfaces, enums and types",
+   "phase": "P4",
+   "complexity": "XL",
+   "deps": [
+    "VIM9-02"
+   ],
+   "scope": "`:class`/`:interface`/`:enum`/`:type`, inheritance, object lifetime/GC, method dispatch."
+  },
+  {
+   "id": "VIM9-04",
+   "area": "VIM9",
+   "area_name": "Deferred Vim9 script",
+   "title": "`:import`/`:export` and autoload imports",
+   "phase": "P4",
+   "complexity": "L",
+   "deps": [
+    "VIM9-01"
+   ],
+   "scope": "Module resolution, `import autoload`, exported symbols, `import/` directory, cycle detection."
+  },
+  {
+   "id": "VIM9-05",
+   "area": "VIM9",
+   "area_name": "Deferred Vim9 script",
+   "title": "Vim9 tooling",
+   "phase": "P4",
+   "complexity": "M",
+   "deps": [
+    "VIM9-02"
+   ],
+   "scope": "`:disassemble`, `:defcompile`, compiler diagnostics, Vim9 profiler integration."
+  }
+ ]
+}

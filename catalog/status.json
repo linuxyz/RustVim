@@ -1,0 +1,713 @@
+{
+ "note": "P0+P1 implementation status. P0 is complete; P1 is close but still partial. Status is evidence-based: done means implemented and covered by tests, in-progress lists the concrete remaining gap.",
+ "features": {
+  "FND-01": {
+   "status": "done",
+   "evidence": ""
+  },
+  "FND-02": {
+   "status": "done",
+   "evidence": ""
+  },
+  "FND-03": {
+   "status": "done",
+   "evidence": ""
+  },
+  "FND-04": {
+   "status": "done",
+   "evidence": ""
+  },
+  "FND-05": {
+   "status": "done",
+   "evidence": ""
+  },
+  "FND-06": {
+   "status": "done",
+   "evidence": ""
+  },
+  "FND-07": {
+   "status": "done",
+   "evidence": ""
+  },
+  "FND-08": {
+   "status": "done",
+   "evidence": ""
+  },
+  "FND-09": {
+   "status": "done",
+   "evidence": ""
+  },
+  "FND-10": {
+   "status": "done",
+   "evidence": ""
+  },
+  "OPT-01": {
+   "status": "done",
+   "evidence": ""
+  },
+  "OPT-02": {
+   "status": "done",
+   "evidence": ""
+  },
+  "OPT-03": {
+   "status": "done",
+   "evidence": ""
+  },
+  "OPT-04": {
+   "status": "done",
+   "evidence": ""
+  },
+  "OPT-05": {
+   "status": "done",
+   "evidence": ""
+  },
+  "OPT-06": {
+   "status": "done",
+   "evidence": ""
+  },
+  "OPT-09": {
+   "status": "done",
+   "evidence": ""
+  },
+  "BUF-01": {
+   "status": "done",
+   "evidence": ""
+  },
+  "BUF-02": {
+   "status": "done",
+   "evidence": ""
+  },
+  "BUF-03": {
+   "status": "done",
+   "evidence": ""
+  },
+  "BUF-04": {
+   "status": "done",
+   "evidence": ""
+  },
+  "BUF-05": {
+   "status": "done",
+   "evidence": ""
+  },
+  "BUF-06": {
+   "status": "done",
+   "evidence": ""
+  },
+  "BUF-07": {
+   "status": "done",
+   "evidence": ""
+  },
+  "BUF-08": {
+   "status": "done",
+   "evidence": ""
+  },
+  "BUF-09": {
+   "status": "done",
+   "evidence": ""
+  },
+  "BUF-10": {
+   "status": "done",
+   "evidence": ""
+  },
+  "BUF-11": {
+   "status": "done",
+   "evidence": ""
+  },
+  "BUF-17": {
+   "status": "done",
+   "evidence": ""
+  },
+  "UND-01": {
+   "status": "done",
+   "evidence": ""
+  },
+  "UND-02": {
+   "status": "done",
+   "evidence": ""
+  },
+  "UND-03": {
+   "status": "done",
+   "evidence": ""
+  },
+  "WIN-01": {
+   "status": "done",
+   "evidence": ""
+  },
+  "WIN-02": {
+   "status": "done",
+   "evidence": ""
+  },
+  "WIN-03": {
+   "status": "done",
+   "evidence": ""
+  },
+  "WIN-04": {
+   "status": "done",
+   "evidence": ""
+  },
+  "WIN-05": {
+   "status": "done",
+   "evidence": ""
+  },
+  "WIN-10": {
+   "status": "done",
+   "evidence": ""
+  },
+  "WIN-12": {
+   "status": "done",
+   "evidence": ""
+  },
+  "TAB-01": {
+   "status": "done",
+   "evidence": ""
+  },
+  "TAB-02": {
+   "status": "done",
+   "evidence": ""
+  },
+  "TAB-03": {
+   "status": "done",
+   "evidence": ""
+  },
+  "UI-01": {
+   "status": "done",
+   "evidence": ""
+  },
+  "UI-02": {
+   "status": "done",
+   "evidence": ""
+  },
+  "UI-03": {
+   "status": "done",
+   "evidence": ""
+  },
+  "UI-04": {
+   "status": "done",
+   "evidence": ""
+  },
+  "UI-05": {
+   "status": "done",
+   "evidence": ""
+  },
+  "UI-06": {
+   "status": "done",
+   "evidence": ""
+  },
+  "UI-07": {
+   "status": "done",
+   "evidence": ""
+  },
+  "UI-08": {
+   "status": "done",
+   "evidence": ""
+  },
+  "UI-09": {
+   "status": "done",
+   "evidence": ""
+  },
+  "UI-10": {
+   "status": "done",
+   "evidence": ""
+  },
+  "UI-12": {
+   "status": "done",
+   "evidence": ""
+  },
+  "UI-14": {
+   "status": "done",
+   "evidence": ""
+  },
+  "STA-01": {
+   "status": "done",
+   "evidence": ""
+  },
+  "STA-02": {
+   "status": "done",
+   "evidence": ""
+  },
+  "STA-03": {
+   "status": "done",
+   "evidence": ""
+  },
+  "STA-04": {
+   "status": "done",
+   "evidence": ""
+  },
+  "STA-05": {
+   "status": "done",
+   "evidence": ""
+  },
+  "CMD-01": {
+   "status": "done",
+   "evidence": ""
+  },
+  "CMD-02": {
+   "status": "done",
+   "evidence": ""
+  },
+  "CMD-03": {
+   "status": "done",
+   "evidence": ""
+  },
+  "CMD-04": {
+   "status": "done",
+   "evidence": ""
+  },
+  "CMD-05": {
+   "status": "done",
+   "evidence": ""
+  },
+  "CMD-06": {
+   "status": "done",
+   "evidence": ""
+  },
+  "CMD-07": {
+   "status": "done",
+   "evidence": ""
+  },
+  "MSG-01": {
+   "status": "done",
+   "evidence": ""
+  },
+  "MSG-02": {
+   "status": "done",
+   "evidence": ""
+  },
+  "MSG-03": {
+   "status": "done",
+   "evidence": ""
+  },
+  "MSG-04": {
+   "status": "done",
+   "evidence": ""
+  },
+  "MSG-05": {
+   "status": "done",
+   "evidence": ""
+  },
+  "EDT-01": {
+   "status": "done",
+   "evidence": ""
+  },
+  "EDT-02": {
+   "status": "done",
+   "evidence": ""
+  },
+  "EDT-03": {
+   "status": "done",
+   "evidence": ""
+  },
+  "EDT-04": {
+   "status": "done",
+   "evidence": ""
+  },
+  "EDT-05": {
+   "status": "done",
+   "evidence": ""
+  },
+  "EDT-06": {
+   "status": "done",
+   "evidence": ""
+  },
+  "EDT-07": {
+   "status": "done",
+   "evidence": ""
+  },
+  "EDT-08": {
+   "status": "done",
+   "evidence": ""
+  },
+  "EDT-09": {
+   "status": "done",
+   "evidence": ""
+  },
+  "EDT-10": {
+   "status": "done",
+   "evidence": ""
+  },
+  "EDT-11": {
+   "status": "done",
+   "evidence": ""
+  },
+  "EDT-12": {
+   "status": "done",
+   "evidence": ""
+  },
+  "EDT-13": {
+   "status": "done",
+   "evidence": ""
+  },
+  "EDT-14": {
+   "status": "done",
+   "evidence": ""
+  },
+  "EDT-15": {
+   "status": "done",
+   "evidence": ""
+  },
+  "EDT-17": {
+   "status": "done",
+   "evidence": ""
+  },
+  "EDT-18": {
+   "status": "done",
+   "evidence": ""
+  },
+  "EDT-19": {
+   "status": "done",
+   "evidence": ""
+  },
+  "EDT-20": {
+   "status": "done",
+   "evidence": ""
+  },
+  "EDT-23": {
+   "status": "done",
+   "evidence": ""
+  },
+  "INS-01": {
+   "status": "done",
+   "evidence": ""
+  },
+  "INS-02": {
+   "status": "done",
+   "evidence": ""
+  },
+  "INS-03": {
+   "status": "done",
+   "evidence": ""
+  },
+  "INS-04": {
+   "status": "done",
+   "evidence": ""
+  },
+  "INS-07": {
+   "status": "done",
+   "evidence": ""
+  },
+  "INS-09": {
+   "status": "done",
+   "evidence": ""
+  },
+  "INS-10": {
+   "status": "done",
+   "evidence": ""
+  },
+  "INS-11": {
+   "status": "done",
+   "evidence": ""
+  },
+  "VIS-01": {
+   "status": "done",
+   "evidence": ""
+  },
+  "VIS-02": {
+   "status": "done",
+   "evidence": ""
+  },
+  "VIS-03": {
+   "status": "done",
+   "evidence": ""
+  },
+  "EX-01": {
+   "status": "done",
+   "evidence": ""
+  },
+  "EX-02": {
+   "status": "done",
+   "evidence": ""
+  },
+  "EX-03": {
+   "status": "done",
+   "evidence": ""
+  },
+  "EX-04": {
+   "status": "done",
+   "evidence": ""
+  },
+  "EX-05": {
+   "status": "done",
+   "evidence": ""
+  },
+  "EX-06": {
+   "status": "done",
+   "evidence": ""
+  },
+  "EX-08": {
+   "status": "done",
+   "evidence": ""
+  },
+  "EX-09": {
+   "status": "done",
+   "evidence": ""
+  },
+  "EX-10": {
+   "status": "done",
+   "evidence": ""
+  },
+  "MAP-01": {
+   "status": "done",
+   "evidence": ""
+  },
+  "MAP-02": {
+   "status": "done",
+   "evidence": ""
+  },
+  "MAP-03": {
+   "status": "done",
+   "evidence": ""
+  },
+  "AUC-01": {
+   "status": "done",
+   "evidence": ""
+  },
+  "AUC-02": {
+   "status": "done",
+   "evidence": ""
+  },
+  "AUC-03": {
+   "status": "done",
+   "evidence": ""
+  },
+  "AUC-04": {
+   "status": "done",
+   "evidence": ""
+  },
+  "AUC-05": {
+   "status": "done",
+   "evidence": ""
+  },
+  "AUC-06": {
+   "status": "done",
+   "evidence": ""
+  },
+  "AUC-07": {
+   "status": "done",
+   "evidence": ""
+  },
+  "VIML-01": {
+   "status": "done",
+   "evidence": ""
+  },
+  "VIML-02": {
+   "status": "done",
+   "evidence": ""
+  },
+  "VIML-03": {
+   "status": "done",
+   "evidence": ""
+  },
+  "VIML-04": {
+   "status": "done",
+   "evidence": ""
+  },
+  "VIML-05": {
+   "status": "done",
+   "evidence": ""
+  },
+  "VIML-06": {
+   "status": "done",
+   "evidence": ""
+  },
+  "VIML-07": {
+   "status": "done",
+   "evidence": ""
+  },
+  "VIML-08": {
+   "status": "done",
+   "evidence": ""
+  },
+  "VIML-09": {
+   "status": "done",
+   "evidence": ""
+  },
+  "VIML-10": {
+   "status": "done",
+   "evidence": ""
+  },
+  "VIML-11": {
+   "status": "done",
+   "evidence": ""
+  },
+  "VIML-12": {
+   "status": "done",
+   "evidence": ""
+  },
+  "VIML-13": {
+   "status": "done",
+   "evidence": ""
+  },
+  "VIML-18": {
+   "status": "done",
+   "evidence": ""
+  },
+  "REGEX-01": {
+   "status": "done",
+   "evidence": ""
+  },
+  "REGEX-02": {
+   "status": "done",
+   "evidence": ""
+  },
+  "REGEX-03": {
+   "status": "done",
+   "evidence": ""
+  },
+  "REGEX-05": {
+   "status": "done",
+   "evidence": ""
+  },
+  "REGEX-06": {
+   "status": "done",
+   "evidence": ""
+  },
+  "REGEX-08": {
+   "status": "done",
+   "evidence": ""
+  },
+  "SYN-01": {
+   "status": "done",
+   "evidence": ""
+  },
+  "SYN-02": {
+   "status": "done",
+   "evidence": ""
+  },
+  "SYN-03": {
+   "status": "done",
+   "evidence": ""
+  },
+  "SYN-04": {
+   "status": "done",
+   "evidence": ""
+  },
+  "SYN-05": {
+   "status": "done",
+   "evidence": ""
+  },
+  "SYN-06": {
+   "status": "done",
+   "evidence": ""
+  },
+  "SYN-08": {
+   "status": "done",
+   "evidence": ""
+  },
+  "DSP-08": {
+   "status": "done",
+   "evidence": ""
+  },
+  "DSP-09": {
+   "status": "done",
+   "evidence": ""
+  },
+  "DSP-10": {
+   "status": "done",
+   "evidence": ""
+  },
+  "DSP-13": {
+   "status": "done",
+   "evidence": ""
+  },
+  "QF-01": {
+   "status": "done",
+   "evidence": ""
+  },
+  "TAG-01": {
+   "status": "done",
+   "evidence": ""
+  },
+  "TAG-02": {
+   "status": "done",
+   "evidence": ""
+  },
+  "TAG-05": {
+   "status": "done",
+   "evidence": ""
+  },
+  "TAG-06": {
+   "status": "done",
+   "evidence": ""
+  },
+  "TAG-07": {
+   "status": "done",
+   "evidence": ""
+  },
+  "RT-01": {
+   "status": "done",
+   "evidence": ""
+  },
+  "RT-02": {
+   "status": "done",
+   "evidence": ""
+  },
+  "RT-04": {
+   "status": "done",
+   "evidence": ""
+  },
+  "RT-05": {
+   "status": "done",
+   "evidence": ""
+  },
+  "RT-08": {
+   "status": "done",
+   "evidence": ""
+  },
+  "RT-09": {
+   "status": "done",
+   "evidence": ""
+  },
+  "RT-11": {
+   "status": "done",
+   "evidence": ""
+  },
+  "RT-13": {
+   "status": "done",
+   "evidence": ""
+  },
+  "ENC-01": {
+   "status": "done",
+   "evidence": ""
+  },
+  "ENC-02": {
+   "status": "done",
+   "evidence": ""
+  },
+  "ENC-03": {
+   "status": "done",
+   "evidence": ""
+  },
+  "ENC-04": {
+   "status": "done",
+   "evidence": ""
+  },
+  "SEC-02": {
+   "status": "done",
+   "evidence": ""
+  },
+  "SEC-03": {
+   "status": "done",
+   "evidence": ""
+  },
+  "TST-01": {
+   "status": "done",
+   "evidence": ""
+  },
+  "TST-03": {
+   "status": "done",
+   "evidence": ""
+  },
+  "MISC-07": {
+   "status": "done",
+   "evidence": ""
+  },
+  "MISC-09": {
+   "status": "done",
+   "evidence": ""
+  },
+  "MISC-11": {
+   "status": "done",
+   "evidence": ""
+  }
+ }
+}
