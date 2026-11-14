@@ -35,6 +35,8 @@ const BUILTINS: &[&str] = &[
     "extend",
     "hlID",
     "indent",
+    "diff_filler",
+    "diff_hlID",
     "prop_type_add",
     "prop_type_change",
     "prop_type_delete",
@@ -809,6 +811,17 @@ pub(crate) fn call_builtin(ctx: &mut Ctx, name: &str, args: &[Value]) -> Result<
                 Some(value) => Ok(value),
                 None => Err(codes::e117(name)),
             }
+        }
+        "diff_filler" => {
+            arity(name, args, 0, Some(1))?;
+            let lnum = args.first().map(number_arg).transpose()?.unwrap_or(0);
+            Ok(Value::Number(ctx.host.diff_filler(lnum)?))
+        }
+        "diff_hlID" => {
+            arity(name, args, 2, Some(2))?;
+            let lnum = number_arg(arg(args, 0))?;
+            let col = number_arg(arg(args, 1))?;
+            Ok(Value::Number(ctx.host.diff_hl_id(lnum, col)?))
         }
         "indent" => {
             arity(name, args, 1, Some(1))?;

@@ -49,6 +49,34 @@ impl HighlightTable {
             },
         );
         groups.insert(
+            "DiffAdd".to_string(),
+            Attr {
+                bg: Color::Indexed(2),
+                ..Attr::DEFAULT
+            },
+        );
+        groups.insert(
+            "DiffChange".to_string(),
+            Attr {
+                bg: Color::Indexed(3),
+                ..Attr::DEFAULT
+            },
+        );
+        groups.insert(
+            "DiffDelete".to_string(),
+            Attr {
+                bg: Color::Indexed(1),
+                ..Attr::DEFAULT
+            },
+        );
+        groups.insert(
+            "DiffText".to_string(),
+            Attr {
+                bg: Color::Indexed(5),
+                ..Attr::DEFAULT
+            },
+        );
+        groups.insert(
             "Folded".to_string(),
             Attr {
                 flags: AttrFlags::REVERSE,

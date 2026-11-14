@@ -1228,8 +1228,12 @@ impl Editor {
             return;
         }
         if let Some(bracket) = self.pending_bracket.take() {
-            if key.key == Key::Char('z') {
-                self.fold_jump(bracket == ']');
+            match key.key {
+                Key::Char('z') => self.fold_jump(bracket == ']'),
+                Key::Char('c') => {
+                    self.diff_jump(bracket == ']');
+                }
+                _ => {}
             }
             return;
         }
@@ -4766,6 +4770,18 @@ impl Editor {
         );
         if same {
             self.apply_linewise_operator(op, count);
+            return;
+        }
+        // "do" and "dp" are diff commands, not d + motion.
+        if op == Operator::Delete && matches!(ch, 'o' | 'p') {
+            let result = if ch == 'o' {
+                self.diff_get()
+            } else {
+                self.diff_put()
+            };
+            if let Err(error) = result {
+                self.set_error(error);
+            }
             return;
         }
         let motion = match ch {
@@ -8831,6 +8847,7 @@ impl Editor {
         } else {
             0
         };
+        self.sync_diffs();
         self.sync_folds();
         self.sync_signs();
     }

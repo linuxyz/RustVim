@@ -1,6 +1,7 @@
 use rvim_types::{BufPos, BufferId, WindowId};
 use rvim_ui_api::{Size, UiMode};
 
+use crate::diff::DiffState;
 use crate::fold::FoldState;
 use crate::signs::SignState;
 use crate::view::RenderHost;
@@ -119,6 +120,8 @@ pub struct Window {
     pub visual: Option<VisualSelection>,
     /// Window-local fold state, maintained by the editor.
     pub folds: FoldState,
+    /// Window-local diff state, maintained by the editor.
+    pub diff: DiffState,
     /// Signs displayed in this window, maintained by the editor.
     pub signs: SignState,
 }
@@ -147,6 +150,7 @@ impl Window {
             search_highlight: None,
             visual: None,
             folds: FoldState::default(),
+            diff: DiffState::default(),
             signs: SignState::default(),
         }
     }
@@ -182,10 +186,11 @@ impl Window {
             for lnum in self.viewport.topline..cursor_lnum {
                 if self.folds.is_hidden(lnum) {
                     if self.folds.owner(lnum) == lnum {
-                        row += 1;
+                        row += 1 + usize::from(self.diff.filler_above(lnum));
                     }
                     continue;
                 }
+                row += usize::from(self.diff.filler_above(lnum));
                 let line = host.buffer_line(self.buffer, lnum).unwrap_or(b"");
                 let display = rvim_types::unicode::display_width(line, 0, self.options.tabstop);
                 row += display.div_ceil(width).max(1);

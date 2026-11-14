@@ -1,8 +1,8 @@
 # RVim implementation status
 
 **Scope:** P0 and P1 from [FEATURES.md](FEATURES.md) (177 catalog entries), plus
-the P2 folding (DSP-01/02/03), signs (DSP-04) and text property
-(DSP-05) subsystems.
+the P2 folding (DSP-01/02/03), signs (DSP-04), text property (DSP-05)
+and two-way diff (DSP-11/12) subsystems.
 **Target:** Vim 9.2.1338.
 **State:** working editor and test suite; P0 is complete, P1 is substantially
 implemented but not yet at the catalog's definition of done. Per-feature status
@@ -56,7 +56,7 @@ used by the golden-frame tests. VIMRUNTIME may point at an unpacked Vim
 | INS-01 insert/append/open | done | insert, append, open line, replace-char |
 | EX-01 Ex parser | done | ranges, addresses, marks, search addresses, modifiers |
 | ENC-01 UTF-8 internal model | done | byte strings, Unicode width table |
-| TST-01 test harness | done | 533 workspace tests at last run |
+| TST-01 test harness | done | 543 workspace tests at last run |
 
 P0 is complete.  Options gated behind unimplemented features (GUI, terminal,
 spell, diff, sessions, Python/Ruby/etc.) are absent from `:set`, completion
@@ -216,6 +216,14 @@ Implemented and exercised by tests:
   `text` virtual text (including `text_align` "after" at the end of a line).
   Properties are anchored to stable line ids so they follow line
   insertions/deletions and undo. `has('textprop')` is 1.
+- **Diff (DSP-11/12 two-way core):** window-local `'diff'`, `:diffthis`,
+  `:diffoff`/`:diffoff!`, `:diffupdate`, `:diffsplit {file}`, `:diffget`
+  and `:diffput`, the `do`/`dp` normal commands, `[c`/`]c` jumps,
+  `diff_filler()`/`diff_hlID()`, an internal Myers line diff with
+  `'diffopt'` `icase`/`iwhite`/`iwhiteall`/`iwhiteeol`/`filler`,
+  `DiffAdd`/`DiffChange`/`DiffDelete` highlighting, filler rows drawn
+  with the `'fillchars'` `diff` character (default `-`), and
+  `'foldmethod'` `diff` folding over changed lines. `has('diff')` is 1.
 
 Still approximated or missing in P2:
 
@@ -237,6 +245,12 @@ Still approximated or missing in P2:
   reason. Virtual text with `text_align` "above"/"below"/"right" is not
   rendered, inline virtual text does not participate in wrapping geometry, and
   `override` is accepted but does not override Visual/cursorline highlights.
+- Diff is two-way only: with more than two diff windows the first other diff
+  window is used, three-way merge (and `:diffpatch`) is not implemented, and
+  the external `'diffexpr'` interface is ignored in favour of the internal
+  Myers diff. Changes are line-level: character-level `linematch` hunks are
+  not highlighted, `'diffanchors'` is parsed but unused, and diff filler rows
+  are always shown (there is no partial `topfill` scrolling state).
 
 Diff, text properties, spell, sessions, jobs and QuickJS remain P2/P3 work.
 
@@ -249,7 +263,7 @@ cargo test --workspace
 cargo clippy --workspace --all-targets -- -D warnings
 ~~~
 
-At the time of writing the workspace has 533 tests and no clippy warnings.
+At the time of writing the workspace has 543 tests and no clippy warnings.
 The optional PTY smoke script is tools/pty_smoke.py; some sandboxes deny
 openpty, so it is not part of the required CI gate yet.
 

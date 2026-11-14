@@ -5,6 +5,7 @@
 
 pub mod autocmd;
 pub mod buffer;
+pub mod diff;
 pub mod editor;
 pub mod errorformat;
 pub mod ex;

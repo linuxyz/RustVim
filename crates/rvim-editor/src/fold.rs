@@ -175,7 +175,16 @@ impl Editor {
             options_key: options.key(),
             ..FoldState::default()
         };
-        let raw_levels = self.fold_levels(buffer, options, &lines, &manual);
+        let mut raw_levels = self.fold_levels(buffer, options, &lines, &manual);
+        if options.method_kind() == FoldMethod::Diff {
+            let diff = self
+                .view
+                .windows
+                .get(&_window)
+                .map(|window| window.diff.clone())
+                .unwrap_or_default();
+            raw_levels = diff_fold_levels(&diff, lines.len());
+        }
         let levels = fill_unknown_levels(raw_levels);
         state.levels = levels
             .iter()
@@ -1141,6 +1150,22 @@ fn marker_levels(options: &FoldOptions, lines: &[VimString]) -> Vec<i64> {
     for level in levels.iter_mut() {
         if *level > options.nest_max {
             *level = options.nest_max.max(0);
+        }
+    }
+    levels
+}
+
+/// 'foldmethod' diff: one fold level for every changed line.
+fn diff_fold_levels(diff: &rvim_view::DiffState, line_count: usize) -> Vec<i64> {
+    let mut levels = vec![0i64; line_count];
+    if !diff.active {
+        return levels;
+    }
+    for (index, kind) in diff.line_kinds.iter().enumerate() {
+        if kind.is_some() {
+            if let Some(slot) = levels.get_mut(index) {
+                *slot = 1;
+            }
         }
     }
     levels

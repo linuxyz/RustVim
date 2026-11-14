@@ -456,6 +456,26 @@ fn execute_command_inner(editor: &mut Editor, command: ExCommand) -> Result<(), 
         "sign" => {
             editor.execute_sign(command.args.trim())?;
         }
+        "diffthis" => editor.diff_this(),
+        "diffoff" => editor.diff_off(command.bang),
+        "diffupdate" => editor.diff_update(),
+        "diffsplit" => {
+            let arg = command.args.trim();
+            let path = if arg.is_empty() {
+                None
+            } else {
+                Some(resolve_file_arg(editor, arg)?)
+            };
+            let previous = editor.current_window_id();
+            editor.split_window(rvim_view::SplitDir::Horizontal, path.as_deref())?;
+            editor.diff_this();
+            editor.diff_this_on(previous);
+        }
+        "diffget" => editor.diff_get()?,
+        "diffput" => editor.diff_put()?,
+        "diffpatch" => {
+            return Err(VimError::plain("E: :diffpatch is not implemented in RVim"));
+        }
         "undo" | "u" => {
             let count = command.args.trim().parse::<u32>().unwrap_or(1).max(1);
             for _ in 0..count {

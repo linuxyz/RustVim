@@ -194,6 +194,16 @@ pub trait VimHost {
         Ok(-1)
     }
 
+    /// diff_filler(): number of filler lines above `lnum` (0 = cursor line).
+    fn diff_filler(&mut self, _lnum: i64) -> Result<i64> {
+        Ok(0)
+    }
+
+    /// diff_hlID(): highlight id of the diff highlight at a position.
+    fn diff_hl_id(&mut self, _lnum: i64, _col: i64) -> Result<i64> {
+        Ok(0)
+    }
+
     /// foldclosed()/foldclosedend(): start/end of the closed fold containing
     /// `lnum` in window `winid` (the current window when None), or -1.
     fn fold_closed(&mut self, _lnum: i64, _winid: Option<u64>) -> Result<i64> {

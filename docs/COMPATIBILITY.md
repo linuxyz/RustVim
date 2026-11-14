@@ -83,10 +83,10 @@ Shared documented approximations behind these numbers:
   the character instead of matching the whole character, and contextual atoms
   (`\%#`, `\%V`, line/column atoms) compile but never match because the
   regex crate has no editor context.
-- Folding, signs and text properties are implemented (`has('folding')`,
-  `has('signs')` and `has('textprop')` are 1), so runtime files that branch
-  on those features now take the folding/sign/text-property paths; the matrix
-  above was re-run with them enabled. Concealment remains a P2 feature
+- Folding, signs, text properties and diff are implemented (`has('folding')`,
+  `has('signs')`, `has('textprop')` and `has('diff')` are 1), so runtime
+  files that branch on those features now take the folding/sign/text-property/
+  diff paths; the matrix above was re-run with them enabled. Concealment remains a P2 feature
   (`has('conceal')` is 0), and the conceal options are accepted and stored
   only so that runtime files load.
 

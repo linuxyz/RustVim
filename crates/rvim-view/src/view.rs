@@ -773,6 +773,28 @@ impl ViewState {
                 first_visible = false;
                 continue;
             }
+            // Diff filler rows are displayed above their line.
+            if !window.folds.is_hidden(lnum) || window.folds.owner(lnum) == lnum {
+                let mut fillers_left = window.diff.filler_above(lnum);
+                while fillers_left > 0 && screen_row < bottom {
+                    Self::render_filler_row(
+                        frame,
+                        host,
+                        window,
+                        rect,
+                        screen_row,
+                        gutter_width,
+                        text_width,
+                        rect.text.cols.saturating_sub(gutter_width),
+                    );
+                    screen_row += 1;
+                    fillers_left -= 1;
+                    first_visible = false;
+                }
+                if screen_row >= bottom {
+                    break;
+                }
+            }
             if window.folds.is_hidden(lnum) {
                 let Some(end) = window.folds.closed_start(lnum) else {
                     // A hidden line that does not start the fold is covered by
@@ -862,7 +884,15 @@ impl ViewState {
                 .map(|cell| cell.line_hl.clone())
                 .filter(|name| !name.is_empty())
                 .map(|name| host.highlight(&name));
-            let line_background = combine_background(cursorline, sign_line_hl);
+            let diff_kind = window.diff.kind(lnum);
+            let diff_hl = diff_kind.map(|kind| {
+                host.highlight(match kind {
+                    crate::diff::DiffKind::Add => "DiffAdd",
+                    crate::diff::DiffKind::Change => "DiffChange",
+                })
+            });
+            let line_background =
+                combine_background(combine_background(cursorline, sign_line_hl), diff_hl);
             let fold_column_text = if fold_width > 0 {
                 window
                     .folds
@@ -1080,6 +1110,37 @@ impl ViewState {
         }
 
         Self::render_statusline_impl(frame, window, host, rect, active_window);
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn render_filler_row(
+        frame: &mut Frame,
+        host: &dyn RenderHost,
+        window: &Window,
+        rect: &crate::layout::LayoutRect,
+        row: u16,
+        gutter_width: u16,
+        _text_width: u16,
+        width: u16,
+    ) {
+        let normal = host.highlight("Normal");
+        let deleted = host.highlight("DiffDelete");
+        frame.base_mut().fill(
+            Rect::new(row, rect.text.col, 1, rect.text.cols),
+            ' ',
+            normal,
+        );
+        let fill = crate::diff::diff_fill_char(&window.options.fillchars);
+        let start = rect.text.col + gutter_width;
+        let end = rect.text.col + rect.text.cols;
+        let mut col = start;
+        while col < end {
+            frame
+                .base_mut()
+                .put_str(row, col, &fill.to_string(), deleted);
+            col += 1;
+        }
+        let _ = width;
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -2025,11 +2086,12 @@ fn rows_before(window: &Window, host: &dyn RenderHost, topline: u32, target: u32
     while lnum < target {
         if window.folds.is_hidden(lnum) {
             if window.folds.owner(lnum) == lnum {
-                row += 1;
+                row += 1 + u32::from(window.diff.filler_above(lnum));
             }
             lnum += 1;
             continue;
         }
+        row += u32::from(window.diff.filler_above(lnum));
         if window.options.wrap && width > 0 {
             let line = host.buffer_line(window.buffer, lnum).unwrap_or(b"");
             let prefix = continuation_prefix(window, line);

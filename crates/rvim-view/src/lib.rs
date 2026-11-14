@@ -5,6 +5,7 @@
 //! commands. It reads the model through [`RenderHost`] and writes a [`rvim_ui_api::Frame`].
 
 pub mod arena_map;
+pub mod diff;
 pub mod fold;
 pub mod layout;
 pub mod signs;
@@ -13,6 +14,7 @@ pub mod textprop;
 pub mod view;
 pub mod window;
 
+pub use diff::{diff_fill_char, DiffBlock, DiffKind, DiffState};
 pub use fold::{fillchars_char, fillchars_opt, FoldState};
 pub use layout::{all_windows, compute_layout, LayoutNode, LayoutRect, SplitDir};
 pub use signs::{SignCell, SignState};

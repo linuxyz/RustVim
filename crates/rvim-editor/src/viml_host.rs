@@ -3028,6 +3028,14 @@ impl VimHost for EditorVimHost<'_> {
         Ok(0)
     }
 
+    fn diff_filler(&mut self, lnum: i64) -> VimResult<i64> {
+        Ok(self.editor.diff_filler_at(lnum))
+    }
+
+    fn diff_hl_id(&mut self, lnum: i64, col: i64) -> VimResult<i64> {
+        Ok(self.editor.diff_hl_id(lnum, col))
+    }
+
     fn indent(&mut self, lnum: i64) -> VimResult<i64> {
         let Some(buffer) = self.editor.current_buffer() else {
             return Ok(-1);
