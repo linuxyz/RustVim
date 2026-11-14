@@ -999,6 +999,16 @@ pub(crate) fn assign_target(
 ) -> Result<()> {
     match target {
         script::AssignTarget::Expr(expression) => assign_expression(ctx, expression, value, op),
+        script::AssignTarget::DynamicName { scope, parts } => {
+            let name = resolve_dynamic_name(ctx, parts)?;
+            if op == AssignOp::Assign {
+                set_var(ctx, *scope, &name, value)
+            } else {
+                let current = get_var(ctx, *scope, &name)?;
+                let updated = apply_assignment(op, current, value, ctx.ignorecase())?;
+                set_var(ctx, *scope, &name, updated)
+            }
+        }
         script::AssignTarget::Destructure { names, rest } => {
             let list = value.as_list().ok_or_else(|| {
                 VimError::new(687, "List value required for destructuring assignment")
@@ -1027,6 +1037,24 @@ pub(crate) fn assign_target(
             Ok(())
         }
     }
+}
+
+/// Build the variable name of a dynamic `:let {expr}name` target.
+pub(crate) fn resolve_dynamic_name(
+    ctx: &mut Ctx,
+    parts: &[script::DynamicNamePart],
+) -> Result<VimString> {
+    let mut name: Vec<u8> = Vec::new();
+    for part in parts {
+        match part {
+            script::DynamicNamePart::Literal(text) => name.extend_from_slice(text.as_bytes()),
+            script::DynamicNamePart::Expr(expression) => {
+                let value = eval(ctx, expression)?;
+                name.extend_from_slice(ops::to_string(&value)?.as_bytes());
+            }
+        }
+    }
+    Ok(VimString::from(String::from_utf8_lossy(&name).into_owned()))
 }
 
 pub(crate) fn assign_expression(

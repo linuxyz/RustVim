@@ -41,6 +41,27 @@ fn items(value: &Value) -> Vec<String> {
 }
 
 #[test]
+fn interpolated_strings_and_dynamic_let_names() {
+    let mut runtime = run("let x = 5
+let name = 'dyn'
+let g:{name}_suffix = 42");
+    assert_eq!(eval(&mut runtime, "$'lit {x}'").echo_string(), "lit 5");
+    assert_eq!(
+        eval(&mut runtime, "$\"double {x + 1}\"").echo_string(),
+        "double 6"
+    );
+    assert_eq!(
+        eval(&mut runtime, "$'{{braces}}'").echo_string(),
+        "{braces}"
+    );
+    assert_eq!(eval(&mut runtime, "g:dyn_suffix").echo_string(), "42");
+    assert_eq!(
+        eval(&mut runtime, "$'the square root of {{9}} is {sqrt(9)}'").echo_string(),
+        "the square root of {9} is 3.0"
+    );
+}
+
+#[test]
 fn host_defaults_are_object_safe_and_report_unsupported() {
     let mut host = EmptyHost;
     let error = host.get_line(1).unwrap_err();

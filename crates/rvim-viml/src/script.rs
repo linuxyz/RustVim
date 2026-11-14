@@ -26,12 +26,26 @@ pub struct Stmt {
     pub kind: StmtKind,
 }
 
+/// One piece of a dynamic `:let {expr}name` assignment target.
+#[derive(Clone, Debug)]
+pub enum DynamicNamePart {
+    /// Literal text, including a `:scope` prefix.
+    Literal(VimString),
+    /// A `{expr}` segment evaluated at assignment time.
+    Expr(Expr),
+}
+
 #[derive(Clone, Debug)]
 pub enum AssignTarget {
     Expr(Expr),
     Destructure {
         names: Vec<Expr>,
         rest: Option<Box<Expr>>,
+    },
+    /// `:let {expr}name = value` / `let b:{expr}_x = value`.
+    DynamicName {
+        scope: Option<Scope>,
+        parts: Vec<DynamicNamePart>,
     },
 }
 
@@ -1100,6 +1114,47 @@ impl BlockParser {
     }
 }
 
+/// Parse a `:let` target, supporting Vim's dynamic `{expr}` name segments.
+fn parse_let_target(parser: &mut Parser) -> Result<AssignTarget> {
+    let mut scope = None;
+    let mut parts: Vec<DynamicNamePart> = Vec::new();
+    let mut dynamic = false;
+    if let TokenKind::ScopedVar(scoped_scope, name) = parser.current_kind().clone() {
+        if matches!(parser.peek_kind(1), Some(TokenKind::Punct(Punct::LBrace))) {
+            parser.bump();
+            scope = Some(scoped_scope);
+            if !name.is_empty() {
+                parts.push(DynamicNamePart::Literal(name));
+            }
+            dynamic = true;
+        }
+    } else if matches!(parser.current_kind(), TokenKind::Punct(Punct::LBrace)) {
+        dynamic = true;
+    }
+    if !dynamic {
+        return Ok(AssignTarget::Expr(parser.parse_expression()?));
+    }
+    loop {
+        match parser.current_kind().clone() {
+            TokenKind::Punct(Punct::LBrace) => {
+                parser.bump();
+                let expression = parser.parse_expression()?;
+                parser.expect_punct(Punct::RBrace)?;
+                parts.push(DynamicNamePart::Expr(expression));
+            }
+            TokenKind::Ident(name) => {
+                parser.bump();
+                parts.push(DynamicNamePart::Literal(name));
+            }
+            _ => break,
+        }
+    }
+    if parts.is_empty() {
+        return Err(codes::e15("empty variable name in :let"));
+    }
+    Ok(AssignTarget::DynamicName { scope, parts })
+}
+
 fn parse_simple(command: Cmd, head: &Head, line: u32) -> Result<StmtKind> {
     match command {
         Cmd::Let | Cmd::Const => {
@@ -1111,7 +1166,7 @@ fn parse_simple(command: Cmd, head: &Head, line: u32) -> Result<StmtKind> {
             let target = if parser.check_punct(Punct::LBracket) {
                 parse_destructure(&mut parser)?
             } else {
-                AssignTarget::Expr(parser.parse_expression()?)
+                parse_let_target(&mut parser)?
             };
             let op = parser
                 .take_assignment_op()
@@ -2313,6 +2368,18 @@ fn lock_target(ctx: &mut Ctx, target: &AssignTarget, locked: bool, depth: i32) -
                 lock_expression(ctx, rest, locked, depth)?;
             }
             Ok(())
+        }
+        AssignTarget::DynamicName { scope, parts } => {
+            let name = eval::resolve_dynamic_name(ctx, parts)?;
+            lock_expression(
+                ctx,
+                &Expr::Var {
+                    scope: *scope,
+                    name,
+                },
+                locked,
+                depth,
+            )
         }
     }
 }

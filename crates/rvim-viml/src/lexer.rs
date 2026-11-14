@@ -139,11 +139,22 @@ pub enum Punct {
     DotDotAssign,
 }
 
+/// One piece of an interpolated string (`$"..."` / `$'...'`).
+#[derive(Clone, Debug, PartialEq)]
+pub enum InterpPart {
+    /// Literal text.
+    Text(VimString),
+    /// Raw source of an embedded `{expr}`.
+    Expression(VimString),
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum TokenKind {
     Number(i64),
     Float(f64),
     String(VimString),
+    /// `$"..."` / `$'...'`: text and embedded expressions.
+    InterpolatedString(Vec<InterpPart>),
     Blob(Vec<u8>),
     Ident(VimString),
     ScopedVar(Scope, VimString),
@@ -234,6 +245,10 @@ impl<'a> Lexer<'a> {
                 Ok(self.token(TokenKind::Punct(Punct::LBrace), start))
             }
             b'\'' | b'"' => self.string(start, byte),
+            b'$' if matches!(self.peek(1), Some(b'\'') | Some(b'"')) => {
+                let quote = self.peek(1).unwrap_or(b'"');
+                self.interpolated_string(start, quote)
+            }
             b'$' => self.environment(start),
             b'@' => self.register(start),
             b'&' => {
@@ -636,6 +651,126 @@ impl<'a> Lexer<'a> {
             }
         }
         Ok(self.token(TokenKind::String(VimString::from(out)), start))
+    }
+
+    /// Lex `$"..."` / `$'...'` with `{expr}` interpolation.
+    ///
+    /// `{{` and `}}` are literal braces (a lone `}` is an error); in double
+    /// quoted form backslash escapes work as usual, including `\{` and
+    /// `\}`.
+    fn interpolated_string(&mut self, start: usize, quote: u8) -> Result<Token> {
+        self.pos += 2; // '$' and the quote
+        let mut parts: Vec<InterpPart> = Vec::new();
+        let mut text: Vec<u8> = Vec::new();
+        loop {
+            let Some(byte) = self.peek(0) else {
+                return Err(VimError::new(115, "Missing quote"));
+            };
+            if byte == quote {
+                self.pos += 1;
+                if quote == b'\'' && self.peek(0) == Some(b'\'') {
+                    text.push(b'\'');
+                    self.pos += 1;
+                    continue;
+                }
+                break;
+            }
+            match byte {
+                b'{' if self.peek(1) == Some(b'{') => {
+                    text.push(b'{');
+                    self.pos += 2;
+                }
+                b'{' => {
+                    if !text.is_empty() {
+                        parts.push(InterpPart::Text(VimString::from(std::mem::take(&mut text))));
+                    }
+                    let expression = self.interpolation_expression()?;
+                    parts.push(InterpPart::Expression(VimString::from(expression)));
+                }
+                b'}' if self.peek(1) == Some(b'}') => {
+                    text.push(b'}');
+                    self.pos += 2;
+                }
+                b'}' => {
+                    return Err(VimError::new(1279, "Single '}' in interpolated string"));
+                }
+                b'\n' if quote == b'"' => {
+                    self.pos += 1;
+                    self.line += 1;
+                    text.push(b'\n');
+                }
+                b'\\' if quote == b'"' => {
+                    self.pos += 1;
+                    self.escape_sequence(&mut text)?;
+                }
+                _ => {
+                    text.push(byte);
+                    self.pos += 1;
+                    if byte == b'\n' {
+                        self.line += 1;
+                    }
+                }
+            }
+        }
+        if !text.is_empty() {
+            parts.push(InterpPart::Text(VimString::from(text)));
+        }
+        Ok(self.token(TokenKind::InterpolatedString(parts), start))
+    }
+
+    /// Capture the raw `{expr}` body inside an interpolated string.
+    fn interpolation_expression(&mut self) -> Result<Vec<u8>> {
+        self.pos += 1; // '{'
+        let start = self.pos;
+        let mut depth = 1usize;
+        while let Some(byte) = self.peek(0) {
+            match byte {
+                b'{' => {
+                    depth += 1;
+                    self.bump();
+                }
+                b'}' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        let expression = self.input[start..self.pos].to_vec();
+                        self.bump(); // '}'
+                        return Ok(expression);
+                    }
+                    self.bump();
+                }
+                b'\'' => {
+                    self.bump();
+                    while let Some(next) = self.peek(0) {
+                        self.bump();
+                        if next == b'\'' {
+                            if self.peek(0) == Some(b'\'') {
+                                self.bump();
+                                continue;
+                            }
+                            break;
+                        }
+                    }
+                }
+                b'"' => {
+                    self.bump();
+                    while let Some(next) = self.peek(0) {
+                        if next == b'\\' {
+                            self.bump();
+                            self.bump();
+                            continue;
+                        }
+                        self.bump();
+                        if next == b'"' {
+                            break;
+                        }
+                    }
+                }
+                _ => {
+                    self.bump();
+                }
+            }
+        }
+        Err(VimError::new(1278, "Missing '}' in interpolated string"))
     }
 
     fn escape_sequence(&mut self, out: &mut Vec<u8>) -> Result<()> {

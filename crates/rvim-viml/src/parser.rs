@@ -9,7 +9,7 @@ use rvim_types::VimString;
 
 use crate::error::{codes, Result};
 use crate::lexer::{
-    tokenize, AssignOp, CmpOp, Keyword, OptionScope, Punct, Scope, Token, TokenKind,
+    tokenize, AssignOp, CmpOp, InterpPart, Keyword, OptionScope, Punct, Scope, Token, TokenKind,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -499,6 +499,39 @@ impl Parser {
         })
     }
 
+    /// Turn `$"..."` parts into a chain of concatenations so the values of
+    /// embedded expressions are converted with the usual string conversion.
+    fn build_interpolated_string(&self, parts: Vec<InterpPart>) -> Result<Expr> {
+        let mut result: Option<Expr> = None;
+        for part in parts {
+            let piece = match part {
+                InterpPart::Text(text) => Expr::String(text),
+                InterpPart::Expression(source) => {
+                    let mut parser = Parser::new(source.as_bytes())?;
+                    let expression = parser.parse_expression()?;
+                    parser.expect_eof()?;
+                    expression
+                }
+            };
+            result = Some(match result {
+                None => piece,
+                Some(left) => Expr::Binary {
+                    op: BinaryOp::Concat,
+                    left: Box::new(left),
+                    right: Box::new(piece),
+                },
+            });
+        }
+        Ok(result.unwrap_or_else(|| Expr::String(VimString::new())))
+    }
+
+    /// Peek a token ahead without consuming it.
+    pub fn peek_kind(&self, offset: usize) -> Option<&TokenKind> {
+        self.tokens
+            .get(self.index + offset)
+            .map(|token| &token.kind)
+    }
+
     fn parse_primary(&mut self) -> Result<Expr> {
         let token = self.current().clone();
         match token.kind {
@@ -513,6 +546,10 @@ impl Parser {
             TokenKind::String(string) => {
                 self.bump();
                 Ok(Expr::String(string))
+            }
+            TokenKind::InterpolatedString(parts) => {
+                self.bump();
+                self.build_interpolated_string(parts)
             }
             TokenKind::Blob(bytes) => {
                 self.bump();

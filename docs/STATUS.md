@@ -122,7 +122,9 @@ Implemented and exercised by tests:
   user commands with raw `-nargs=*` arguments executed in their defining
   script's `s:` context (including `<q-args>` quoting), dotted function
   names, `is#`/`isnot#`, the bare `version` constant, `v:lang`, and
-  `<sfile>` expansion with `:p`/`:h`/`:t`/`:r`/`:e` modifiers.
+  `<sfile>` expansion with `:p`/`:h`/`:t`/`:r`/`:e` modifiers,
+  Vim 9.2 interpolated strings (`$'...'` / `$"..."` with `{expr}`,
+  `{{`/`}}` literal braces) and dynamic `:let {expr}name` targets.
 - **Syntax/highlight:** highlight groups and links, :highlight, colorscheme
   sourcing, syntax keyword/match/region engine, runtime syntax loading.
 - **Runtime/help:** runtimepath discovery, :runtime/:runtime!, filetype detection, :setf/:setfiletype, :packadd/:packloadall,
@@ -163,9 +165,7 @@ Still missing or partial in P1:
 - Completion contexts cover buffers/functions/variables/syntax/compiler/colorscheme; some Vim cmdwin-specific conveniences (type column, cmdwin insert-mode start) are not reproduced.
 - :ptselect lists candidates and previews the first match; the interactive select-then-preview step and :psearch are not implemented.
 - Full shell quoting matrix and remaining errorformat corner cases (%D/%X directory stacks are supported).
-- Vim 9.2 interpolated strings (`$'...'` / `$"..."`) are not implemented; four runtime syntax files (help, icalendar, modula3, pkl) still use them.
-- Dynamic `:let {expr}name` variable names are not implemented; liquid, livebook and markdown syntax files build buffer-local names this way.
-- Vim9-script runtime files are out of scope and reported as `E319` (compiler/context.vim and several newer syntax files such as 2html, context, csv, hare, hlsl, java and tsv).
+- Vim9-script runtime files are out of scope and reported as `E319` (compiler/context.vim and several newer syntax files such as 2html, context, csv, hare, help, hlsl, java and tsv).
 - `syntax/glimmer.vim` only loads after a JavaScript/TypeScript syntax file has set `b:current_syntax`; sourcing it standalone fails in Vim too, so the Tier C check is environment dependent.
 - The basic autoload loader covers script-level autoload files; deeper autoload and full legacy VimL semantics are still incomplete.
 - Fold and conceal options (`foldmethod`, `foldignore`, `conceallevel`, ...) are accepted and stored so runtime files load, but folding and concealment themselves remain P2 (`has('folding')`/`has('conceal')` are 0).
@@ -187,7 +187,7 @@ cargo test --workspace
 cargo clippy --workspace --all-targets -- -D warnings
 ~~~
 
-At the time of writing the workspace has 508 tests and no clippy warnings.
+At the time of writing the workspace has 509 tests and no clippy warnings.
 The optional PTY smoke script is tools/pty_smoke.py; some sandboxes deny
 openpty, so it is not part of the required CI gate yet.
 

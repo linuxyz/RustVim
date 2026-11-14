@@ -50,7 +50,7 @@ Local run against the pinned v9.2.1338 runtime (2026-11-14):
 |---|---|---|---|
 | A | 14 | 14 | 0 |
 | B | 47 | 48 | 1 |
-| C | 764 | 790 | 26 |
+| C | 770 | 790 | 20 |
 
 Tier A is the CI gate; the remaining Tier B and Tier C failures are classified
 below.
@@ -59,27 +59,23 @@ below.
 
 The failures above are the current, honest gap list.  They cluster in:
 
-1. **Vim9 script runtime files (18 Tier C checks plus compiler/context.vim in
-   Tier B).** Vim 9.2 converted a number of
-   runtime files to Vim9 script (`vim9script`, `def`, `import`), including
-   several syntax files (2html, context, csv, hare, haredoc, hitest, hlsl, mf,
-   mp, odin, omnimark, tsv, java, antlr, javacc, aidl, sqlj, xpm among the
-   affected checks) and `compiler/context.vim`.  Vim9 script is deliberately
-   out of scope for RVim (like the terminal emulator); these files now report
-   `E319` instead of being silently skipped.
-2. **Vim 9.2 interpolated strings (4 syntax files).** `$'...'` and
-   `$"..."` string interpolation (help.vim, icalendar.vim, modula3.vim,
-   pkl.vim) is a Vim 9.2 language feature that the legacy VimL engine does not
-   implement yet.
-3. **Dynamic `:let {expr}name` variable names (3 syntax files).**
-   liquid.vim, livebook.vim and markdown.vim build names such as
-   `b:{matchstr(s:type,'[^.]*')}_subtype`; dynamic variable names in
-   `:let` are not implemented.
-4. **Known harness artefact (1 check).** `syntax/glimmer.vim` requires
+1. **Vim9 script runtime files (19 Tier C checks plus compiler/context.vim in
+   Tier B).** Vim 9.2 converted a number of runtime files to Vim9 script
+   (`vim9script`, `def`, `import`), including 2html, context, csv, hare,
+   haredoc, help, hitest, hlsl, mf, mp, odin, omnimark, tsv, java, antlr,
+   javacc, aidl, sqlj and xpm, plus `compiler/context.vim`.  Vim9 script is
+   deliberately out of scope for RVim (like the terminal emulator); these
+   files now report `E319` instead of being silently skipped.
+2. **Known harness artefact (1 check).** `syntax/glimmer.vim` requires
    `b:current_syntax` to have been set by a previously loaded JavaScript or
    TypeScript syntax file.  Sourcing it standalone fails in Vim 9.1 as well
    (exit status 1), so the check is environment dependent rather than an RVim
    gap.
+
+Everything else in the pinned runtime loads without errors.  Vim 9.2
+interpolated strings (`$'...'` / `$"..."`) and dynamic
+`:let {expr}name` variable names are now implemented by the legacy VimL
+engine and no longer appear as gaps.
 
 Shared documented approximations behind these numbers:
 
