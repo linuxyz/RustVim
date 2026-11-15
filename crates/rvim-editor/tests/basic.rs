@@ -4848,3 +4848,251 @@ fn backward_search_cmdwin_reports_question_type() {
     ed.handle_key(KeyEvent::with_mods(Key::Char('c'), Mods::CTRL));
     assert!(ed.cmdwin.is_none());
 }
+
+#[test]
+fn global_delete_inverse_and_nested_patterns() {
+    let path = temp_path("global-delete.txt");
+    std::fs::write(
+        &path,
+        b"alpha
+beta
+alpha#beta
+gamma alpha
+delta
+beta alpha
+",
+    )
+    .unwrap();
+    let mut ed = Editor::new(Size::new(12, 50));
+    ed.open_file(&path).unwrap();
+    ed.execute_ex("g/^alpha/d");
+    assert!(!ed.messages.error, "{:?}", ed.messages.last);
+    assert_eq!(ed.line(1), Some(b"beta".as_slice()));
+    assert_eq!(ed.line(2), Some(b"gamma alpha".as_slice()));
+    assert_eq!(ed.line(3), Some(b"delta".as_slice()));
+    assert_eq!(ed.line(4), Some(b"beta alpha".as_slice()));
+    assert_eq!(ed.line(5), None);
+
+    let path = temp_path("global-inverse.txt");
+    std::fs::write(
+        &path,
+        b"alpha
+beta
+alpha#beta
+gamma alpha
+delta
+beta alpha
+",
+    )
+    .unwrap();
+    let mut ed = Editor::new(Size::new(12, 50));
+    ed.open_file(&path).unwrap();
+    ed.execute_ex("g!/^alpha/d");
+    assert_eq!(ed.line(1), Some(b"alpha".as_slice()));
+    assert_eq!(ed.line(2), Some(b"alpha#beta".as_slice()));
+    assert_eq!(ed.line(3), None);
+
+    let path = temp_path("global-nested.txt");
+    std::fs::write(
+        &path,
+        b"alpha
+beta
+alpha#beta
+gamma alpha
+delta
+beta alpha
+",
+    )
+    .unwrap();
+    let mut ed = Editor::new(Size::new(12, 50));
+    ed.open_file(&path).unwrap();
+    ed.execute_ex("g/alpha/v/beta/d");
+    assert_eq!(ed.line(1), Some(b"beta".as_slice()));
+    assert_eq!(ed.line(2), Some(b"alpha#beta".as_slice()));
+    assert_eq!(ed.line(3), Some(b"delta".as_slice()));
+    assert_eq!(ed.line(4), Some(b"beta alpha".as_slice()));
+    assert_eq!(ed.line(5), None);
+}
+
+#[test]
+fn global_delimiters_range_and_last_patterns() {
+    let path = temp_path("global-delimiters.txt");
+    std::fs::write(
+        &path,
+        b"alpha#beta
+alpha
+beta
+",
+    )
+    .unwrap();
+    let mut ed = Editor::new(Size::new(12, 50));
+    ed.open_file(&path).unwrap();
+    ed.execute_ex("g#alpha\\#beta#d");
+    assert_eq!(ed.line(1), Some(b"alpha".as_slice()));
+    assert_eq!(ed.line(2), Some(b"beta".as_slice()));
+
+    let path = temp_path("global-range.txt");
+    std::fs::write(
+        &path,
+        b"alpha
+beta
+alpha#beta
+gamma alpha
+delta
+",
+    )
+    .unwrap();
+    let mut ed = Editor::new(Size::new(12, 50));
+    ed.open_file(&path).unwrap();
+    ed.execute_ex("2,4g/alpha/d");
+    assert_eq!(ed.line(1), Some(b"alpha".as_slice()));
+    assert_eq!(ed.line(2), Some(b"beta".as_slice()));
+    assert_eq!(ed.line(3), Some(b"delta".as_slice()));
+
+    let path = temp_path("global-last-substitute.txt");
+    std::fs::write(
+        &path,
+        b"alpha
+beta
+alpha#beta
+gamma alpha
+",
+    )
+    .unwrap();
+    let mut ed = Editor::new(Size::new(12, 50));
+    ed.open_file(&path).unwrap();
+    ed.execute_ex("g/alpha/s//X/");
+    assert_eq!(ed.line(1), Some(b"X".as_slice()));
+    assert_eq!(ed.line(2), Some(b"beta".as_slice()));
+    assert_eq!(ed.line(3), Some(b"X#beta".as_slice()));
+    assert_eq!(ed.line(4), Some(b"gamma X".as_slice()));
+    assert_eq!(
+        ed.last_search.as_ref().map(|(p, _)| p.as_str()),
+        Some("alpha")
+    );
+    assert_eq!(ed.last_substitute_pattern.as_deref(), Some("alpha"));
+}
+
+#[test]
+fn global_move_and_copy_keep_line_marks_aligned() {
+    let path = temp_path("global-move.txt");
+    std::fs::write(
+        &path,
+        b"alpha
+beta
+alpha#beta
+gamma alpha
+delta
+beta alpha
+",
+    )
+    .unwrap();
+    let mut ed = Editor::new(Size::new(12, 50));
+    ed.open_file(&path).unwrap();
+    ed.execute_ex("g/alpha/m$");
+    assert!(!ed.messages.error, "{:?}", ed.messages.last);
+    assert_eq!(ed.line(1), Some(b"beta".as_slice()));
+    assert_eq!(ed.line(2), Some(b"delta".as_slice()));
+    assert_eq!(ed.line(3), Some(b"alpha".as_slice()));
+    assert_eq!(ed.line(4), Some(b"alpha#beta".as_slice()));
+    assert_eq!(ed.line(5), Some(b"gamma alpha".as_slice()));
+    assert_eq!(ed.line(6), Some(b"beta alpha".as_slice()));
+
+    let path = temp_path("global-copy.txt");
+    std::fs::write(
+        &path,
+        b"alpha
+beta
+alpha#beta
+gamma alpha
+delta
+beta alpha
+",
+    )
+    .unwrap();
+    let mut ed = Editor::new(Size::new(12, 50));
+    ed.open_file(&path).unwrap();
+    ed.execute_ex("g/alpha/t$");
+    assert!(!ed.messages.error, "{:?}", ed.messages.last);
+    assert_eq!(ed.line(7), Some(b"alpha".as_slice()));
+    assert_eq!(ed.line(8), Some(b"alpha#beta".as_slice()));
+    assert_eq!(ed.line(9), Some(b"gamma alpha".as_slice()));
+    assert_eq!(ed.line(10), Some(b"beta alpha".as_slice()));
+    assert_eq!(ed.line(11), None);
+}
+
+#[test]
+fn global_argument_errors_are_reported() {
+    let path = temp_path("global-errors.txt");
+    std::fs::write(
+        &path,
+        b"alpha
+beta
+",
+    )
+    .unwrap();
+    let mut ed = Editor::new(Size::new(12, 50));
+    ed.open_file(&path).unwrap();
+    ed.execute_ex("g");
+    assert!(ed.messages.error);
+    assert!(ed
+        .messages
+        .last
+        .as_deref()
+        .is_some_and(|message| message.contains("E148")));
+    ed.messages.error = false;
+    ed.execute_ex("g!alpha");
+    assert!(ed.messages.error);
+    assert!(ed
+        .messages
+        .last
+        .as_deref()
+        .is_some_and(|message| message.contains("E146")));
+    ed.messages.error = false;
+    ed.execute_ex("g/alpha/1,2g/beta/d");
+    assert!(ed.messages.error);
+    assert!(ed
+        .messages
+        .last
+        .as_deref()
+        .is_some_and(|message| message.contains("E147")));
+    assert_eq!(ed.line(1), Some(b"alpha".as_slice()));
+    assert_eq!(ed.line(2), Some(b"beta".as_slice()));
+}
+
+#[test]
+fn substitute_at_end_does_not_duplicate_text() {
+    let path = temp_path("substitute-end.txt");
+    std::fs::write(
+        &path, b"alpha
+",
+    )
+    .unwrap();
+    let mut ed = Editor::new(Size::new(12, 50));
+    ed.open_file(&path).unwrap();
+    ed.execute_ex("s/$/!/");
+    assert_eq!(ed.line(1), Some(b"alpha!".as_slice()));
+}
+
+#[test]
+fn global_is_one_undo_step() {
+    let path = temp_path("global-undo.txt");
+    std::fs::write(
+        &path,
+        b"alpha
+beta
+alpha#beta
+delta
+",
+    )
+    .unwrap();
+    let mut ed = Editor::new(Size::new(12, 50));
+    ed.open_file(&path).unwrap();
+    ed.execute_ex("g/alpha/d");
+    assert_eq!(ed.line(1), Some(b"beta".as_slice()));
+    ed.execute_ex("undo");
+    assert_eq!(ed.line(1), Some(b"alpha".as_slice()));
+    assert_eq!(ed.line(2), Some(b"beta".as_slice()));
+    assert_eq!(ed.line(3), Some(b"alpha#beta".as_slice()));
+    assert_eq!(ed.line(4), Some(b"delta".as_slice()));
+}

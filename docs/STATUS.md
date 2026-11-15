@@ -56,7 +56,7 @@ used by the golden-frame tests. VIMRUNTIME may point at an unpacked Vim
 | INS-01 insert/append/open | done | insert, append, open line, replace-char |
 | EX-01 Ex parser | done | ranges, addresses, marks, search addresses, modifiers |
 | ENC-01 UTF-8 internal model | done | byte strings, Unicode width table |
-| TST-01 test harness | done | 629 workspace tests at last run |
+| TST-01 test harness | done | 635 workspace tests at last run |
 
 P0 is complete.  Options gated behind unimplemented features (GUI, terminal,
 spell, diff, sessions, Python/Ruby/etc.) are absent from `:set`, completion
@@ -311,7 +311,7 @@ cargo test --workspace
 cargo clippy --workspace --all-targets -- -D warnings
 ~~~
 
-At the time of writing the workspace has 629 tests and no clippy warnings.
+At the time of writing the workspace has 635 tests and no clippy warnings.
 The optional PTY smoke script is tools/pty_smoke.py; some sandboxes deny
 openpty, so it is not part of the required CI gate yet.
 

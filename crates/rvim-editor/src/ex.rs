@@ -1,3 +1,4 @@
+use std::collections::BTreeSet;
 use std::path::PathBuf;
 
 use rvim_edit::{RangeKind, RegisterContent, RegisterKind, RegisterName, TextRange};
@@ -2291,91 +2292,270 @@ fn handle_vimgrep(editor: &mut Editor, command: &ExCommand) -> Result<(), VimErr
 }
 
 fn handle_global(editor: &mut Editor, command: &ExCommand) -> Result<(), VimError> {
-    let inverse = command.name.starts_with('v');
-    let Some((pattern, subcommand)) = parse_global_args(&command.args) else {
-        return Err(VimError::new(474, "Invalid global arguments"));
+    let inverse = command.name.starts_with('v') ^ command.bang;
+    let Some((pattern, subcommand)) = parse_global_args(&command.args)? else {
+        return Err(VimError::new(
+            148,
+            "E148: Regular expression missing from :global",
+        ));
     };
     if pattern.is_empty() {
-        return Err(VimError::new(35, "No previous regular expression"));
+        let previous = editor
+            .last_search
+            .as_ref()
+            .map(|(pattern, _)| pattern.clone());
+        let Some(pattern) = previous else {
+            return Err(VimError::new(35, "E35: No previous regular expression"));
+        };
+        return global_with_pattern(editor, command, inverse, &pattern, subcommand);
     }
-    let regex = crate::search::compile_pattern(editor, &pattern)?;
-    let range = if command.range.addresses.is_empty() {
+    global_with_pattern(editor, command, inverse, &pattern, subcommand)
+}
+
+#[derive(Clone, Copy, Debug)]
+enum GlobalAdjustment {
+    None,
+    Delete { start: u32, end: u32 },
+    Move { start: u32, end: u32, dest: u32 },
+    Copy { start: u32, end: u32, dest: u32 },
+}
+
+fn plan_global_adjustment(editor: &Editor, subcommand: &str) -> GlobalAdjustment {
+    let Ok(command) = rvim_ex::parse(subcommand) else {
+        return GlobalAdjustment::None;
+    };
+    let name = command.name.as_str();
+    let range = || {
+        resolve_range(editor, &command.range).unwrap_or_else(|_| {
+            let line = editor.cursor().lnum;
+            ResolvedRange::new(line, line)
+        })
+    };
+    match name {
+        "d" | "de" | "del" | "dele" | "delet" | "delete" => {
+            let range = range();
+            GlobalAdjustment::Delete {
+                start: range.start,
+                end: range.end,
+            }
+        }
+        "m" | "mo" | "mov" | "move" => {
+            let range = range();
+            match parse_address_target(editor, command.args.trim()) {
+                Ok(dest) => GlobalAdjustment::Move {
+                    start: range.start,
+                    end: range.end,
+                    dest,
+                },
+                Err(_) => GlobalAdjustment::None,
+            }
+        }
+        "t" | "co" | "cop" | "copy" => {
+            let range = range();
+            match parse_address_target(editor, command.args.trim()) {
+                Ok(dest) => GlobalAdjustment::Copy {
+                    start: range.start,
+                    end: range.end,
+                    dest,
+                },
+                Err(_) => GlobalAdjustment::None,
+            }
+        }
+        _ => GlobalAdjustment::None,
+    }
+}
+
+fn apply_global_adjustment(
+    marks: &mut BTreeSet<u32>,
+    adjustment: GlobalAdjustment,
+    target: u32,
+    delta: i64,
+) {
+    let transform = |line: u32| -> Option<u32> {
+        match adjustment {
+            GlobalAdjustment::Delete { start, end } => {
+                if line >= start && line <= end {
+                    None
+                } else if line > end {
+                    Some(line - (end - start + 1))
+                } else {
+                    Some(line)
+                }
+            }
+            GlobalAdjustment::Move { start, end, dest } => {
+                let len = end - start + 1;
+                if line >= start && line <= end {
+                    let offset = line - start;
+                    if dest < start {
+                        Some(dest + 1 + offset)
+                    } else {
+                        Some(dest - len + 1 + offset)
+                    }
+                } else if dest < start && line > dest && line < start {
+                    Some(line + len)
+                } else if dest > end && line > end && line <= dest {
+                    Some(line - len)
+                } else {
+                    Some(line)
+                }
+            }
+            GlobalAdjustment::Copy { start, end, dest } => {
+                if line > dest {
+                    Some(line + (end - start + 1))
+                } else {
+                    Some(line)
+                }
+            }
+            GlobalAdjustment::None => Some(line),
+        }
+    };
+    let adjusted: BTreeSet<u32> = if matches!(adjustment, GlobalAdjustment::None) {
+        marks
+            .iter()
+            .map(|line| {
+                if delta > 0 && *line > target {
+                    (*line).saturating_add(delta as u32)
+                } else if delta < 0 && *line > target {
+                    (*line).saturating_sub((-delta) as u32)
+                } else {
+                    *line
+                }
+            })
+            .collect()
+    } else {
+        marks.iter().filter_map(|line| transform(*line)).collect()
+    };
+    *marks = adjusted;
+}
+
+fn global_with_pattern(
+    editor: &mut Editor,
+    command: &ExCommand,
+    inverse: bool,
+    pattern: &str,
+    mut subcommand: String,
+) -> Result<(), VimError> {
+    let regex = crate::search::compile_pattern(editor, pattern)?;
+    // :global sets both the last search and last substitute pattern.
+    editor.search_pattern = Some(pattern.to_string());
+    editor.last_search = Some((pattern.to_string(), 1));
+    editor.last_substitute_pattern = Some(pattern.to_string());
+    let nested = editor.global_depth > 0;
+    let range = if nested {
+        if !command.range.addresses.is_empty() {
+            return Err(VimError::new(
+                147,
+                "E147: Cannot do :global recursive with a range",
+            ));
+        }
+        let line = editor.cursor().lnum;
+        ResolvedRange::new(line, line)
+    } else if command.range.addresses.is_empty() {
         ResolvedRange::new(1, editor.line_count().max(1))
     } else {
         resolve_range(editor, &command.range)?
     };
-    let mut matching = Vec::new();
+    let mut matching = BTreeSet::new();
     for lnum in range.start..=range.end {
         let Some(line) = editor.line(lnum) else {
             continue;
         };
         let matched = regex.find(line).is_some();
         if matched != inverse {
-            matching.push(lnum);
+            matching.insert(lnum);
         }
     }
     if subcommand.trim().is_empty() {
-        let mut text = String::new();
-        for lnum in &matching {
-            if let Some(line) = editor.line(*lnum) {
-                text.push_str(&String::from_utf8_lossy(line));
-                text.push('\n');
-            }
-        }
-        editor.messages.info(text.trim_end().to_string());
-        return Ok(());
+        subcommand = "p".to_string();
     }
-    let subcommand = subcommand.trim().to_string();
-    let mut offset = 0i64;
-    for lnum in matching {
-        let target = (lnum as i64 + offset).max(1) as u32;
+    let undo_base = editor
+        .current_buffer()
+        .map(|buffer| buffer.undo.current_node());
+    editor.global_depth += 1;
+    let mut last_error: Option<VimError> = None;
+    while let Some(&target) = matching.iter().next() {
+        matching.remove(&target);
         if target > editor.line_count() {
-            break;
+            continue;
         }
         editor.set_cursor(BufPos::new(target, 0));
-        let before = editor.line_count();
-        execute_ex_line_nested(editor, &subcommand)?;
-        offset += editor.line_count() as i64 - before as i64;
+        let before_lines = editor.line_count();
+        let adjustment = plan_global_adjustment(editor, &subcommand);
+        let result = execute_ex_line_nested(editor, &subcommand);
+        editor.stop_insert();
+        let delta = editor.line_count() as i64 - before_lines as i64;
+        apply_global_adjustment(&mut matching, adjustment, target, delta);
+        if let Err(error) = result {
+            // Vim aborts the command for this line and continues with the
+            // next marked line, reporting the error afterwards.
+            let message = error.to_string();
+            editor.messages.error(&message);
+            last_error = Some(error);
+        }
     }
-    Ok(())
+    editor.global_depth -= 1;
+    if let Some(base) = undo_base {
+        editor.squash_undo_to(base);
+    }
+    match last_error {
+        Some(error) => Err(error),
+        None => Ok(()),
+    }
 }
 
 fn execute_ex_line_nested(editor: &mut Editor, command: &str) -> Result<(), VimError> {
     execute(editor, command)
 }
 
-fn parse_global_args(args: &str) -> Option<(String, String)> {
+fn parse_global_args(args: &str) -> Result<Option<(String, String)>, VimError> {
     let trimmed = args.trim_start();
     if trimmed.is_empty() {
-        return None;
+        return Err(VimError::new(
+            148,
+            "E148: Regular expression missing from :global",
+        ));
     }
     let bytes = trimmed.as_bytes();
     let delimiter = bytes[0] as char;
     if delimiter.is_ascii_alphanumeric() {
-        return None;
+        return Err(VimError::new(
+            146,
+            "E146: Regular expressions can't be delimited by letters",
+        ));
+    }
+    if delimiter == '\\' {
+        return Err(VimError::new(10, "E10: \\ should be followed by /, ? or &"));
     }
     let mut pattern = String::new();
     let mut index = 1;
+    let mut closed = false;
     while index < bytes.len() {
         let ch = bytes[index] as char;
         if ch == '\\' && index + 1 < bytes.len() {
-            pattern.push(ch);
-            pattern.push(bytes[index + 1] as char);
+            let next = bytes[index + 1] as char;
+            if next == delimiter {
+                pattern.push(next);
+            } else {
+                pattern.push('\\');
+                pattern.push(next);
+            }
             index += 2;
             continue;
         }
         if ch == delimiter {
+            index += 1;
+            closed = true;
             break;
         }
         pattern.push(ch);
         index += 1;
     }
-    let command = if index + 1 < bytes.len() {
-        trimmed[index + 1..].to_string()
+    let command = if closed && index <= bytes.len() {
+        trimmed[index..].to_string()
     } else {
         String::new()
     };
-    Some((unescape_pattern(&pattern), command))
+    Ok(Some((pattern, command)))
 }
 
 fn handle_substitute(editor: &mut Editor, command: &ExCommand) -> Result<(), VimError> {
@@ -2550,10 +2730,11 @@ fn substitute_impl(
             local_count += 1;
             last_pos = Some(BufPos::new(lnum, found.start as u32));
             if found.end == found.start {
-                if cursor < line.len() {
-                    output.push(line[cursor]);
-                    cursor += 1;
+                if found.start < line.len() {
+                    output.push(line[found.start]);
+                    cursor = found.start + 1;
                 } else {
+                    cursor = found.end;
                     break;
                 }
             } else {

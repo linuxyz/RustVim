@@ -82,6 +82,24 @@ impl UndoManager {
         self.current
     }
 
+    /// Make the current snapshot a direct child of the parent, discarding the
+    /// intermediate undo steps.  Used by :global/:vglobal so the whole command
+    /// can be undone in one step, like Vim.
+    pub fn squash_to(&mut self, parent: usize) -> bool {
+        if parent >= self.nodes.len() || self.current <= parent {
+            return false;
+        }
+        let current = self.current;
+        if let Some(node) = self.nodes.get_mut(current) {
+            node.parent = Some(parent);
+        }
+        if let Some(node) = self.nodes.get_mut(parent) {
+            node.children.clear();
+            node.children.push(current);
+        }
+        true
+    }
+
     pub fn replace_nodes(&mut self, nodes: Vec<UndoNode>, current: usize) {
         if nodes.is_empty() {
             self.nodes.clear();

@@ -99,7 +99,7 @@ editor host bridge.  <code>has('vim9script')</code> is 1; the 19 Tier C Vim9
 checks and <code>compiler/context.vim</code> pass; the compatibility matrix is
 A 14/14, B 48/48, C 789/790 (only the environment-dependent
 <code>syntax/glimmer.vim</code> artefact remains); the Vim9 differential corpus
-passes 26/26 oracle-checked cases and the workspace has 629 tests.
+passes 26/26 oracle-checked cases and the workspace has 635 tests.
 
 Documented approximations (deliberately not claimed as full parity):
 

@@ -296,3 +296,16 @@ tests and debugging); they sum to ~58-93M for target B.
   - Remaining documented approximations: no strict static checker, legacy
     import stubs, mixed def skipping, no cross-source Vim9 callable state, no
     super member access, generics/interface conformance permissive.
+
+- 2026-11-15: :global/:vglobal (multi-repeat) fixes.
+  - :g! and :v now invert correctly; :g sets last search and substitute pattern;
+    invalid/missing pattern delimiters report E146/E148/E35; recursive :global
+    is limited to the current line (E147); per-line errors are reported and
+    processing continues; :normal leaves insert mode before the next match.
+  - Line marks are adjusted for delete/move/copy so :g/pat/m$, :g/pat/t$ and
+    mixed delete/substitute commands stay aligned; the whole :global command
+    is a single undo step.
+  - Substitutes that match at end-of-line (s/$/x/) no longer duplicate text.
+  - Regression tests added in crates/rvim-editor/tests/basic.rs (workspace now
+    635 tests); differential checks against Vim cover delete/inverse, ranges,
+    delimiters, nesting, move/copy, :normal and last-pattern semantics.

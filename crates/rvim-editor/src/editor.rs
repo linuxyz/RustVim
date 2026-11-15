@@ -425,6 +425,9 @@ pub struct Editor {
     pub filetype_plugin: bool,
     pub filetype_indent: bool,
     pub autoload_depth: usize,
+    /// Non-zero while a :global/:vglobal command is executing; recursion is
+    /// limited to the current line (E147) like Vim.
+    pub(crate) global_depth: u32,
     pub swaps: SwapState,
     pub swap_enabled: bool,
     pub tag_stack: Vec<(BufferId, BufPos)>,
@@ -560,6 +563,7 @@ impl Editor {
             border_drag: None,
             redir_target: None,
             noautocmd_depth: 0,
+            global_depth: 0,
             keepjumps_depth: 0,
             secure_sourcing: false,
             sandbox_depth: 0,
@@ -8372,6 +8376,13 @@ impl Editor {
             return;
         };
         buffer.undo.record(&buffer.text, cursor);
+    }
+
+    /// Replace intermediate undo steps with one step from the given parent.
+    pub(crate) fn squash_undo_to(&mut self, parent: usize) {
+        if let Some(buffer) = self.current_buffer_mut() {
+            buffer.undo.squash_to(parent);
+        }
     }
 
     pub(crate) fn commit_undo(&mut self) {
